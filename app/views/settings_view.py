@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFormLayout,
     QLabel,
     QLineEdit,
@@ -11,7 +13,10 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QApplication,
 )
+
+from qt_material import apply_stylesheet
 
 from app.controllers.auth_controller import AuthController
 from app.core.translation_manager import TranslationManager
@@ -22,7 +27,7 @@ class SettingsView(QWidget):
     """
     Settings / Profile view for the logged-in user.
 
-    Currently exposes a Change Password form wired to :class:`AuthController`.
+    Exposes password change, theme selection and font scaling.
     """
 
     def __init__(
@@ -48,8 +53,9 @@ class SettingsView(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout.setSpacing(24)
 
+        # Password section
         self.lblTitle = QLabel(self)
         self.lblTitle.setObjectName("settingsTitleLabel")
 
@@ -89,10 +95,55 @@ class SettingsView(QWidget):
             alignment=Qt.AlignmentFlag.AlignRight,
         )
 
+        # Appearance section
+        self.lblAppearanceTitle = QLabel(self)
+        self.lblThemeLabel = QLabel(self)
+        self.cmbTheme = QComboBox(self)
+
+        self.lblFontScaleLabel = QLabel(self)
+        self.cmbFontScale = QComboBox(self)
+
+        appearance_layout = QFormLayout()
+        appearance_layout.setLabelAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        appearance_layout.setFormAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+        appearance_layout.setHorizontalSpacing(12)
+        appearance_layout.setVerticalSpacing(8)
+
+        appearance_layout.addRow(self.lblThemeLabel, self.cmbTheme)
+        appearance_layout.addRow(self.lblFontScaleLabel, self.cmbFontScale)
+
+        layout.addSpacing(16)
+        layout.addWidget(self.lblAppearanceTitle)
+        layout.addLayout(appearance_layout)
+
         layout.addStretch()
+
+        # Initial options
+        self.cmbTheme.addItems(
+            [
+                "Dark Teal",
+                "Light",
+            ]
+        )
+        self.cmbTheme.setCurrentIndex(0)
+
+        self.cmbFontScale.addItems(
+            [
+                "Small",
+                "Medium",
+                "Large",
+            ]
+        )
+        self.cmbFontScale.setCurrentIndex(1)
 
     def _connect_signals(self) -> None:
         self.btnSavePassword.clicked.connect(self._on_save_password_clicked)
+        self.cmbTheme.currentIndexChanged.connect(self._on_theme_changed)
+        self.cmbFontScale.currentIndexChanged.connect(self._on_font_scale_changed)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -116,6 +167,7 @@ class SettingsView(QWidget):
         """
         Apply localized texts to labels and buttons.
         """
+        # Password section
         self.lblTitle.setText(self._translator["settings.change_password.title"])
         self.lblCurrentPassword.setText(
             self._translator["settings.change_password.current"]
@@ -127,6 +179,77 @@ class SettingsView(QWidget):
         self.btnSavePassword.setText(
             self._translator["settings.change_password.button"]
         )
+
+        # Appearance section
+        self.lblAppearanceTitle.setText(
+            self._translator["settings.appearance.title"]
+        )
+        self.lblThemeLabel.setText(self._translator["settings.theme.label"])
+        self.lblFontScaleLabel.setText(
+            self._translator["settings.font_scale.label"]
+        )
+
+        # Theme options
+        current_theme = self.cmbTheme.currentIndex()
+        self.cmbTheme.blockSignals(True)
+        self.cmbTheme.clear()
+        self.cmbTheme.addItem(
+            self._translator["settings.theme.option.dark_teal"], "dark"
+        )
+        self.cmbTheme.addItem(
+            self._translator["settings.theme.option.light"], "light"
+        )
+        if 0 <= current_theme < self.cmbTheme.count():
+            self.cmbTheme.setCurrentIndex(current_theme)
+        self.cmbTheme.blockSignals(False)
+
+        # Font scale options
+        current_scale = self.cmbFontScale.currentIndex()
+        self.cmbFontScale.blockSignals(True)
+        self.cmbFontScale.clear()
+        self.cmbFontScale.addItem(
+            self._translator["settings.font_scale.option.small"], "small"
+        )
+        self.cmbFontScale.addItem(
+            self._translator["settings.font_scale.option.medium"], "medium"
+        )
+        self.cmbFontScale.addItem(
+            self._translator["settings.font_scale.option.large"], "large"
+        )
+        if 0 <= current_scale < self.cmbFontScale.count():
+            self.cmbFontScale.setCurrentIndex(current_scale)
+        self.cmbFontScale.blockSignals(False)
+
+    # ------------------------------------------------------------------ #
+    # Theme / font handling
+    # ------------------------------------------------------------------ #
+    def _on_theme_changed(self, index: int) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+
+        theme_data = self.cmbTheme.itemData(index)
+        if theme_data == "light":
+            apply_stylesheet(app, theme="light_blue.xml")
+        else:
+            apply_stylesheet(app, theme="dark_teal.xml")
+
+    def _on_font_scale_changed(self, index: int) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+
+        scale = self.cmbFontScale.itemData(index)
+        if scale == "small":
+            point_size = 10
+        elif scale == "large":
+            point_size = 14
+        else:
+            point_size = 12
+
+        font = app.font() if app.font() is not None else QFont()
+        font.setPointSize(point_size)
+        app.setFont(font)
 
     # ------------------------------------------------------------------ #
     # Slots

@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6 import uic
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSpacerItem, QSizePolicy
 
 from app.controllers.auth_controller import AuthController
 from app.core.translation_manager import TranslationManager
@@ -33,6 +33,38 @@ class LoginView(QWidget):
         self._translator = translation_manager
 
         uic.loadUi("app/views/ui/login.ui", self)
+
+        # Fix window size and center content visually
+        self.setFixedSize(400, 550)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+
+        # Optional: ensure the root layout has vertical stretch for centering
+        if isinstance(self.layout(), QVBoxLayout):
+            layout: QVBoxLayout = self.layout()
+            layout.setContentsMargins(32, 32, 32, 32)
+            layout.setSpacing(16)
+            if layout.itemAt(0) and isinstance(
+                layout.itemAt(0).spacerItem(), QSpacerItem
+            ):
+                pass
+            else:
+                layout.insertSpacerItem(
+                    0,
+                    QSpacerItem(
+                        20,
+                        40,
+                        QSizePolicy.Policy.Minimum,
+                        QSizePolicy.Policy.Expanding,
+                    ),
+                )
+                layout.addSpacerItem(
+                    QSpacerItem(
+                        20,
+                        40,
+                        QSizePolicy.Policy.Minimum,
+                        QSizePolicy.Policy.Expanding,
+                    )
+                )
 
         # Ensure error label uses a predictable object name for styling.
         self.lblError.setObjectName("LoginErrorLabel")

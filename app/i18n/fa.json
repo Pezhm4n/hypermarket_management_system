@@ -73,5 +73,48 @@
   "settings.change_password.error.mismatch": "رمز عبور جدید و تکرار آن یکسان نیستند.",
   "settings.change_password.error.incorrect": "رمز عبور فعلی نادرست است.",
   "settings.change_password.error.no_user": "هیچ کاربری وارد سیستم نشده است.",
-  "settings.change_password.info.success": "رمز عبور با موفقیت تغییر کرد."
+  "settings.change_password.info.success": "رمز عبور با موفقیت تغییر کرد.",
+
+  "settings.appearance.title": "نمای ظاهری",
+  "settings.theme.label": "پوسته",
+  "settings.theme.option.dark_teal": "تیره (سایه آبی-سبز)",
+  "settings.theme.option.light": "روشن",
+  "settings.font_scale.label": "اندازه قلم",
+  "settings.font_scale.option.small": "کوچک",
+  "settings.font_scale.option.medium": "متوسط",
+  "settings.font_scale.option.large": "بزرگ",
+
+  "users.page_title": "کاربران",
+  "users.table.column.id": "شناسه",
+  "users.table.column.full_name": "نام و نام خانوادگی",
+  "users.table.column.username": "نام کاربری",
+  "users.table.column.role": "نقش",
+  "users.table.column.mobile": "موبایل",
+  "users.table.column.status": "وضعیت",
+  "users.status.active": "فعال",
+  "users.status.locked": "قفل شده",
+
+  "users.button.add": "افزودن کاربر",
+  "users.button.edit": "ویرایش",
+  "users.button.delete": "حذف",
+
+  "users.dialog.add_title": "افزودن کاربر جدید",
+  "users.dialog.edit_title": "ویرایش کاربر",
+  "users.dialog.field.first_name": "نام",
+  "users.dialog.field.last_name": "نام خانوادگی",
+  "users.dialog.field.mobile": "موبایل",
+  "users.dialog.field.username": "نام کاربری",
+  "users.dialog.field.password": "رمز عبور",
+  "users.dialog.field.role": "نقش",
+  "users.dialog.button.save": "ذخیره",
+  "users.dialog.button.cancel": "انصراف",
+
+  "users.dialog.error.select_edit": "لطفاً یک کاربر را برای ویرایش انتخاب کنید.",
+  "users.dialog.error.select_delete": "لطفاً یک کاربر را برای حذف انتخاب کنید.",
+  "users.dialog.error.not_found": "کاربر انتخاب‌شده یافت نشد.",
+  "users.dialog.error.required_fields": "لطفاً همه فیلدهای ضروری را پر کنید.",
+  "users.dialog.error.password_required": "برای کاربران جدید، وارد کردن رمز عبور الزامی است.",
+
+  "users.dialog.confirm_delete.title": "آیا مطمئن هستید؟",
+  "users.dialog.confirm_delete.body": "آیا از حذف کاربر «{label}» اطمینان دارید؟\nدر این صورت حساب کاربری قفل و وضعیت کارمند غیرفعال خواهد شد."
 }

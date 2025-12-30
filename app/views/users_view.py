@@ -61,12 +61,12 @@ class UsersView(QWidget):
     # ------------------------------------------------------------------ #
     def _setup_table(self) -> None:
         headers = [
-            "ID",
-            "Full Name",
-            "Username",
-            "Role",
-            "Mobile",
-            "Status",
+            self._translator["users.table.column.id"],
+            self._translator["users.table.column.full_name"],
+            self._translator["users.table.column.username"],
+            self._translator["users.table.column.role"],
+            self._translator["users.table.column.mobile"],
+            self._translator["users.table.column.status"],
         ]
         self.tblUsers.setColumnCount(len(headers))
         self.tblUsers.setHorizontalHeaderLabels(headers)
@@ -95,7 +95,15 @@ class UsersView(QWidget):
 
     def _apply_translations(self) -> None:
         # Use the existing "Users" section key as the window title.
-        self.setWindowTitle(self._translator["main.section.users"])
+        self.setWindowTitle(self._translator["users.page_title"])
+        self.btnAddUser.setText(self._translator["users.button.add"])
+        self.btnEditUser.setText(self._translator["users.button.edit"])
+        self.btnDeleteUser.setText(self._translator["users.button.delete"])
+        self.txtSearchUser.setPlaceholderText(
+            self._translator["inventory.search_placeholder"]
+        )
+        # Refresh headers to pick up translated text
+        self._setup_table()
 
     # ------------------------------------------------------------------ #
     # Data loading
@@ -190,7 +198,7 @@ class UsersView(QWidget):
             QMessageBox.information(
                 self,
                 self._translator["dialog.info_title"],
-                "Please select a user to edit.",
+                self._translator["users.dialog.error.select_edit"],
             )
             return
 
@@ -199,7 +207,7 @@ class UsersView(QWidget):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                "The selected user could not be found.",
+                self._translator["users.dialog.error.not_found"],
             )
             self._load_users()
             return
@@ -219,7 +227,7 @@ class UsersView(QWidget):
             QMessageBox.information(
                 self,
                 self._translator["dialog.info_title"],
-                "Please select a user to delete.",
+                self._translator["users.dialog.error.select_delete"],
             )
             return
 
@@ -228,7 +236,7 @@ class UsersView(QWidget):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                "The selected user could not be found.",
+                self._translator["users.dialog.error.not_found"],
             )
             self._load_users()
             return
@@ -237,14 +245,13 @@ class UsersView(QWidget):
         full_name = f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip()
         label = username or full_name or str(user_id)
 
-        confirmation_text = (
-            f"Are you sure you want to delete user '{label}'?\n"
-            "This will lock the account and deactivate the employee."
+        confirmation_text = self._translator["users.dialog.confirm_delete.body"].format(
+            label=label
         )
 
         reply = QMessageBox.question(
             self,
-            self._translator["dialog.warning_title"],
+            self._translator["users.dialog.confirm_delete.title"],
             confirmation_text,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -306,12 +313,30 @@ class UserDialog(QDialog):
         self.txtPassword.setEchoMode(QLineEdit.EchoMode.Password)
         self.cmbRole = QComboBox(self)
 
-        form_layout.addRow("First name", self.txtFirstName)
-        form_layout.addRow("Last name", self.txtLastName)
-        form_layout.addRow("Mobile", self.txtMobile)
-        form_layout.addRow("Username", self.txtUsername)
-        form_layout.addRow("Password", self.txtPassword)
-        form_layout.addRow("Role", self.cmbRole)
+        form_layout.addRow(
+            self._translator["users.dialog.field.first_name"],
+            self.txtFirstName,
+        )
+        form_layout.addRow(
+            self._translator["users.dialog.field.last_name"],
+            self.txtLastName,
+        )
+        form_layout.addRow(
+            self._translator["users.dialog.field.mobile"],
+            self.txtMobile,
+        )
+        form_layout.addRow(
+            self._translator["users.dialog.field.username"],
+            self.txtUsername,
+        )
+        form_layout.addRow(
+            self._translator["users.dialog.field.password"],
+            self.txtPassword,
+        )
+        form_layout.addRow(
+            self._translator["users.dialog.field.role"],
+            self.cmbRole,
+        )
 
         layout.addLayout(form_layout)
 
@@ -335,8 +360,9 @@ class UserDialog(QDialog):
         self.cmbRole.addItems(roles)
 
     def _apply_translations(self) -> None:
+        self.setWindowTitle(self._translator["users.page_title"])
         if self._user_data is None:
-            self.setWindowTitle(self._translator["sidebar.users"])
+
             self.lblTitle.setText("Add new user")
         else:
             self.setWindowTitle(self._translator["sidebar.users"])

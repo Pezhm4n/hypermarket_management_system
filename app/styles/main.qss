@@ -64,8 +64,27 @@ QLabel#HeaderSubtitle {
 }
 
 QLabel#HeaderUserLabel {
-    font-size: 10pt;
-    color: #9ca3af;
+    font-size: 11pt;
+    font-weight: 600;
+    color: #e5e7eb;
+}
+
+/* Login form specific */
+QWidget#LoginViewForm,
+QDialog#LoginDialog {
+    background-color: #020617;
+}
+
+QPushButton#btnLogin {
+    font-size: 12pt;
+    font-weight: 600;
+    padding: 8px 16px;
+}
+
+/* Settings labels */
+QLabel#settingsTitleLabel {
+    font-size: 13pt;
+    font-weight: 600;
 }
 
 /* =========================================================================

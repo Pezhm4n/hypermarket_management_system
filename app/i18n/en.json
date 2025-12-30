@@ -73,5 +73,48 @@
   "settings.change_password.error.mismatch": "New password and confirmation do not match.",
   "settings.change_password.error.incorrect": "Current password is incorrect.",
   "settings.change_password.error.no_user": "No user is currently logged in.",
-  "settings.change_password.info.success": "Password changed successfully."
+  "settings.change_password.info.success": "Password changed successfully.",
+
+  "settings.appearance.title": "Appearance",
+  "settings.theme.label": "Theme",
+  "settings.theme.option.dark_teal": "Dark Teal",
+  "settings.theme.option.light": "Light",
+  "settings.font_scale.label": "Font size",
+  "settings.font_scale.option.small": "Small",
+  "settings.font_scale.option.medium": "Medium",
+  "settings.font_scale.option.large": "Large",
+
+  "users.page_title": "Users",
+  "users.table.column.id": "ID",
+  "users.table.column.full_name": "Full Name",
+  "users.table.column.username": "Username",
+  "users.table.column.role": "Role",
+  "users.table.column.mobile": "Mobile",
+  "users.table.column.status": "Status",
+  "users.status.active": "Active",
+  "users.status.locked": "Locked",
+
+  "users.button.add": "Add User",
+  "users.button.edit": "Edit",
+  "users.button.delete": "Delete",
+
+  "users.dialog.add_title": "Add new user",
+  "users.dialog.edit_title": "Edit user",
+  "users.dialog.field.first_name": "First name",
+  "users.dialog.field.last_name": "Last name",
+  "users.dialog.field.mobile": "Mobile",
+  "users.dialog.field.username": "Username",
+  "users.dialog.field.password": "Password",
+  "users.dialog.field.role": "Role",
+  "users.dialog.button.save": "Save",
+  "users.dialog.button.cancel": "Cancel",
+
+  "users.dialog.error.select_edit": "Please select a user to edit.",
+  "users.dialog.error.select_delete": "Please select a user to delete.",
+  "users.dialog.error.not_found": "The selected user could not be found.",
+  "users.dialog.error.required_fields": "Please fill in all required fields.",
+  "users.dialog.error.password_required": "Password is required for new users.",
+
+  "users.dialog.confirm_delete.title": "Are you sure?",
+  "users.dialog.confirm_delete.body": "Are you sure you want to delete user '{label}'?\nThis will lock the account and deactivate the employee."
 }
