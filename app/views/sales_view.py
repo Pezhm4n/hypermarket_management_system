@@ -5,11 +5,10 @@ from typing import Any, Dict, List, Optional
 
 from PyQt6 import uic
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QMessageBox,
-    QShortcut,
     QTableWidgetItem,
     QWidget,
 )
@@ -184,8 +183,8 @@ class SalesView(QWidget):
 
     def _remove_selected_row(self) -> None:
         row = self.tblCart.currentRow()
-        if ro <& 0:
-            re_codern
+        if row < 0:
+            return
 
         self.tblCart.removeRow(row)
         self._recalculate_total()
@@ -285,7 +284,7 @@ class SalesView(QWidget):
             total_stock_dec = Decimal("0")
 
         if total_stock_dec <= 0:
-            QMessageBox.warn_codeg(
+            QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
                 self._translator["sales.error.out_of_stock"].format(

@@ -52,6 +52,9 @@ class MainView(QMainWindow):
 
         self._page_indices: Dict[str, int] = {}
 
+        # Ensure a professional default window size
+        self.setMinimumSize(1280, 800)
+
         self._build_ui()
         self._create_module_views()
         self._connect_signals()
@@ -117,34 +120,8 @@ class MainView(QMainWindow):
             sidebar_layout.addWidget(btn)
             self._nav_group.addButton(btn)
 
+        # Sidebar now only contains navigation
         sidebar_layout.addStretch()
-
-        # Language + logout row
-        bottom_layout = QHBoxLayout()
-        bottom_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_layout.setSpacing(8)
-
-        self.btnLanguageEn = QPushButton(self.sidebar)
-        self.btnLanguageEn.setProperty("role", "language")
-
-        self.btnLanguageFa = QPushButton(self.sidebar)
-        self.btnLanguageFa.setProperty("role", "language")
-
-        self._lang_group = QButtonGroup(self)
-        self._lang_group.setExclusive(True)
-        self._lang_group.addButton(self.btnLanguageEn)
-        self._lang_group.addButton(self.btnLanguageFa)
-
-        bottom_layout.addWidget(self.btnLanguageEn)
-        bottom_layout.addWidget(self.btnLanguageFa)
-
-        bottom_layout.addStretch()
-
-        self.btnLogout = QPushButton(self.sidebar)
-        self.btnLogout.setProperty("role", "logout")
-        bottom_layout.addWidget(self.btnLogout)
-
-        sidebar_layout.addLayout(bottom_layout)
 
         root_layout.addWidget(self.sidebar)
 
@@ -152,15 +129,15 @@ class MainView(QMainWindow):
         self.content = QWidget(central)
         self.content.setObjectName("ContentArea")
         content_layout = QVBoxLayout(self.content)
-        content_layout.setContentsMargins(24, 24, 24, 24)
+        content_layout.setContentsMargins(20, 20, 20, 20)
         content_layout.setSpacing(16)
 
         # Header bar
         self.header_bar = QFrame(self.content)
         self.header_bar.setObjectName("HeaderBar")
         header_layout = QHBoxLayout(self.header_bar)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(8)
+        header_layout.setContentsMargins(12, 8, 12, 8)
+        header_layout.setSpacing(12)
 
         self.lblSectionTitle = QLabel(self.header_bar)
         self.lblSectionTitle.setObjectName("HeaderTitle")
@@ -177,9 +154,30 @@ class MainView(QMainWindow):
         header_layout.addLayout(header_text_layout)
         header_layout.addStretch()
 
+        # Right side of header: welcome label + language toggles + logout
         self.lblCurrentUser = QLabel(self.header_bar)
         self.lblCurrentUser.setObjectName("HeaderUserLabel")
         header_layout.addWidget(self.lblCurrentUser)
+
+        # Language buttons
+        self.btnLanguageEn = QPushButton(self.header_bar)
+        self.btnLanguageEn.setProperty("role", "language")
+
+        self.btnLanguageFa = QPushButton(self.header_bar)
+        self.btnLanguageFa.setProperty("role", "language")
+
+        self._lang_group = QButtonGroup(self)
+        self._lang_group.setExclusive(True)
+        self._lang_group.addButton(self.btnLanguageEn)
+        self._lang_group.addButton(self.btnLanguageFa)
+
+        header_layout.addWidget(self.btnLanguageEn)
+        header_layout.addWidget(self.btnLanguageFa)
+
+        # Logout button
+        self.btnLogout = QPushButton(self.header_bar)
+        self.btnLogout.setProperty("role", "logout")
+        header_layout.addWidget(self.btnLogout)
 
         content_layout.addWidget(self.header_bar)
 

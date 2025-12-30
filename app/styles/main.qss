@@ -5,7 +5,7 @@
 QWidget {
     background-color: #0f172a; /* Slate 900 */
     color: #f9fafb;           /* Gray 50 */
-    font-family: "Segoe UI", "Vazir", "Tahoma";
+    font-family: "Vazirmatn", "Segoe UI", "Tahoma", "sans-serif";
     font-size: 11pt;
 }
 

@@ -19,17 +19,15 @@ class AppConfig:
     version: str = "1.0.0"
 
     # Internationalization
-    default_language: str = "en"  # Supported: "en" (English), "fa" (Persian)
+    default_language: str = "fa"  # Supported: "en" (English), "fa" (Persian)
     translations_directory: Path = BASE_DIR / "i18n"
 
     # Styling
     styles_path: Path = BASE_DIR / "styles" / "main.qss"
 
     # Database
-    database_url: str = os.getenv(
-        "HMS_DATABASE_URL",
-        "postgresql+psycopg2://postgres:postgres@localhost:5432/hms_db",
-    )
+    # NOTE: Per requirements, this is hard-coded and does not respect env vars.
+    database_url: str = "postgresql+psycopg2://postgres:123456@localhost:5432/hms_db"
 
     # Logging
     log_directory: Path = ROOT_DIR / "logs"
