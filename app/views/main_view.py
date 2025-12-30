@@ -21,6 +21,7 @@ from app.models.models import UserAccount
 from app.views.inventory_view import InventoryView
 from app.views.sales_view import SalesView
 from app.views.settings_view import SettingsView
+from app.views.users_view import UsersView
 
 
 class MainView(QMainWindow):
@@ -223,13 +224,11 @@ class MainView(QMainWindow):
         self._reports_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         reports_layout.addWidget(self._reports_label)
 
-        users_page = QWidget(self.stacked_widget)
-        users_layout = QVBoxLayout(users_page)
-        users_layout.setContentsMargins(0, 0, 0, 0)
-        users_layout.setSpacing(0)
-        self._users_label = QLabel(users_page)
-        self._users_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        users_layout.addWidget(self._users_label)
+        # Users module view
+        self.users_view = UsersView(
+            translation_manager=self._translator,
+            parent=self.stacked_widget,
+        )
 
         # Add pages to stacked widget and record indices
         self._page_indices["dashboard"] = self.stacked_widget.addWidget(
@@ -240,7 +239,7 @@ class MainView(QMainWindow):
             self.inventory_view
         )
         self._page_indices["reports"] = self.stacked_widget.addWidget(reports_page)
-        self._page_indices["users"] = self.stacked_widget.addWidget(users_page)
+        self._page_indices["users"] = self.stacked_widget.addWidget(self.users_view)
         self._page_indices["settings"] = self.stacked_widget.addWidget(
             self.settings_view
         )
@@ -313,7 +312,6 @@ class MainView(QMainWindow):
         # Static page labels
         self._dashboard_label.setText(self._translator["main.section.dashboard"])
         self._reports_label.setText(self._translator["main.section.reports"])
-        self._users_label.setText(self._translator["main.section.users"])
 
         # Ensure language toggle reflects active language
         if self._translator.language == "fa":
