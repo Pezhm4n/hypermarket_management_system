@@ -9,11 +9,10 @@ from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QMessageBox,
-    QShortcut,
     QTableWidgetItem,
     QWidget,
 )
-
+from PyQt6.QtGui import QShortcut
 from app.controllers.sales_controller import SalesController
 
 

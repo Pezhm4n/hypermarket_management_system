@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 # export HMS_DATABASE_URL="postgresql+psycopg2://user:password@localhost:5432/hms_db"
 DATABASE_URL = os.getenv(
     "HMS_DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres@localhost:5432/hms_db",
+    "postgresql+psycopg2://postgres:123456@localhost:5432/hms_db",
 )
 
 # Singleton engine for the entire application
@@ -19,11 +19,7 @@ engine = create_engine(
 )
 
 # Factory for new Session objects
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 
 def get_session() -> Generator:
