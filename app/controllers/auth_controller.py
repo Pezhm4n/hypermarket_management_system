@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable, Optional, TypeVar
 
 import bcrypt
@@ -26,18 +26,27 @@ class AuthController:
 
     def __init__(self, session_factory: SessionFactory | None = None) -> None:
         self._session_factory: SessionFactory = session_factory or SessionLocal
+        self._last_error: Optional[str] = None
 
     def _get_session(self) -> Session:
         return self._session_factory()
+
+    @property
+    def last_error(self) -> Optional[str]:
+        return self._last_error
 
     def login(self, username: str, password: str) -> Optional[UserAccount]:
         """
         Validate credentials and return the authenticated UserAccount.
 
         Returns None if the username/password combination is invalid or the
-        account is locked.
+        account is locked. In failure cases, ``self.last_error`` contains a
+        human-readable description of the reason.
         """
+        self._last_error = None
+
         if not username or not password:
+            self._last_error = "Username and password are required."
             return None
 
         with self._get_session() as session:
@@ -49,20 +58,65 @@ class AuthController:
 
             if user is None:
                 logger.info("Login failed: unknown username '%s'", username)
+                self._last_error = "Invalid username or password."
+                return None
+
+            now = datetime.utcnow()
+
+            # Check temporary lockout window based on failed attempts.
+            if getattr(user, "LockoutUntil", None) is not None and user.LockoutUntil > now:
+                remaining_seconds = int((user.LockoutUntil - now).total_seconds())
+                remaining_minutes = max(1, remaining_seconds // 60)
+                self._last_error = (
+                    f"Account locked. Try again in {remaining_minutes} minutes."
+                )
+                logger.warning(
+                    "Login attempt for temporarily locked account '%s' (until %s)",
+                    username,
+                    user.LockoutUntil,
+                )
                 return None
 
             if user.IsLocked:
                 logger.warning("Login attempt for locked account '%s'", username)
+                self._last_error = "Account is locked."
                 return None
+
+            # If a previous lockout has expired, clear counters.
+            if getattr(user, "LockoutUntil", None) is not None and user.LockoutUntil <= now:
+                user.LockoutUntil = None
+                user.FailedLoginAttempts = 0
 
             password_bytes = password.encode("utf-8")
             stored_hash = user.PasswordHash.encode("utf-8")
 
             if not bcrypt.checkpw(password_bytes, stored_hash):
-                logger.info("Login failed: invalid password for '%s'", username)
+                attempts = (user.FailedLoginAttempts or 0) + 1
+                user.FailedLoginAttempts = attempts
+
+                if attempts >= 3:
+                    user.LockoutUntil = now + timedelta(minutes=5)
+                    self._last_error = "Account locked. Try again in 5 minutes."
+                    logger.warning(
+                        "User '%s' locked out due to too many failed login attempts.",
+                        username,
+                    )
+                else:
+                    self._last_error = "Invalid username or password."
+                    logger.info(
+                        "Login failed: invalid password for '%s' (attempt %s of 3)",
+                        username,
+                        attempts,
+                    )
+
+                session.add(user)
+                session.commit()
                 return None
 
-            user.LastLogin = datetime.utcnow()
+            # Successful login: reset counters and update last login timestamp.
+            user.LastLogin = now
+            user.FailedLoginAttempts = 0
+            user.LockoutUntil = None
             session.add(user)
             session.commit()
 

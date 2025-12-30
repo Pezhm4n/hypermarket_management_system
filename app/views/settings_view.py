@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+import re
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -20,6 +21,7 @@ from qt_material import apply_stylesheet
 
 from app.config import CONFIG
 from app.controllers.auth_controller import AuthController
+from app.controllers.user_controller import UserController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
 
@@ -41,6 +43,8 @@ class SettingsView(QWidget):
         self._auth_controller = auth_controller
         self._translator = translation_manager
         self._current_user: Optional[UserAccount] = None
+        self._user_controller = UserController()
+        self._profile_data: Optional[dict] = None
 
         self._build_ui()
         self._connect_signals()
@@ -55,6 +59,54 @@ class SettingsView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(24)
+
+        # Profile section
+        self.lblProfileTitle = QLabel(self)
+        self.lblProfileTitle.setObjectName("settingsProfileTitleLabel")
+
+        profile_layout = QFormLayout()
+        profile_layout.setLabelAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        profile_layout.setFormAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+        profile_layout.setHorizontalSpacing(12)
+        profile_layout.setVerticalSpacing(12)
+
+        self.txtProfileFirstName = QLineEdit(self)
+        self.txtProfileLastName = QLineEdit(self)
+        self.txtProfileNationalID = QLineEdit(self)
+        self.txtProfileUsername = QLineEdit(self)
+        self.txtProfileMobile = QLineEdit(self)
+
+        # Read-only fields
+        self.txtProfileFirstName.setReadOnly(True)
+        self.txtProfileLastName.setReadOnly(True)
+        self.txtProfileNationalID.setReadOnly(True)
+        self.txtProfileUsername.setReadOnly(True)
+
+        self.lblProfileFirstName = QLabel(self)
+        self.lblProfileLastName = QLabel(self)
+        self.lblProfileNationalID = QLabel(self)
+        self.lblProfileUsername = QLabel(self)
+        self.lblProfileMobile = QLabel(self)
+
+        profile_layout.addRow(self.lblProfileFirstName, self.txtProfileFirstName)
+        profile_layout.addRow(self.lblProfileLastName, self.txtProfileLastName)
+        profile_layout.addRow(self.lblProfileNationalID, self.txtProfileNationalID)
+        profile_layout.addRow(self.lblProfileUsername, self.txtProfileUsername)
+        profile_layout.addRow(self.lblProfileMobile, self.txtProfileMobile)
+
+        self.btnSaveProfile = QPushButton(self)
+        self.btnSaveProfile.setObjectName("btnSaveProfile")
+
+        layout.addWidget(self.lblProfileTitle)
+        layout.addLayout(profile_layout)
+        layout.addWidget(
+            self.btnSaveProfile,
+            alignment=Qt.AlignmentFlag.AlignRight,
+        )
 
         # Password section
         self.lblTitle = QLabel(self)
@@ -142,6 +194,7 @@ class SettingsView(QWidget):
         self.cmbFontScale.setCurrentIndex(1)
 
     def _connect_signals(self) -> None:
+        self.btnSaveProfile.clicked.connect(self._on_save_profile_clicked)
         self.btnSavePassword.clicked.connect(self._on_save_password_clicked)
         self.cmbTheme.currentIndexChanged.connect(self._on_theme_changed)
         self.cmbFontScale.currentIndexChanged.connect(self._on_font_scale_changed)
@@ -156,6 +209,7 @@ class SettingsView(QWidget):
         The user is required for change-password operations.
         """
         self._current_user = user
+        self._load_profile()
 
     # ------------------------------------------------------------------ #
     # Translation helpers
@@ -168,6 +222,24 @@ class SettingsView(QWidget):
         """
         Apply localized texts to labels and buttons.
         """
+        # Window title
+        self.setWindowTitle(self._translator["settings.page_title"])
+
+        # Profile section
+        self.lblProfileTitle.setText("Profile")
+        self.lblProfileFirstName.setText(
+            self._translator["users.dialog.field.first_name"]
+        )
+        self.lblProfileLastName.setText(
+            self._translator["users.dialog.field.last_name"]
+        )
+        self.lblProfileNationalID.setText("National ID")
+        self.lblProfileUsername.setText(
+            self._translator["users.dialog.field.username"]
+        )
+        self.lblProfileMobile.setText(self._translator["users.dialog.field.mobile"])
+        self.btnSaveProfile.setText("Save profile")
+
         # Password section
         self.lblTitle.setText(self._translator["settings.change_password.title"])
         self.lblCurrentPassword.setText(
@@ -272,6 +344,89 @@ class SettingsView(QWidget):
 
         override = f"\n{marker}\n* {{ font-size: {point_size}pt; }}\n"
         app.setStyleSheet(base_qss + override)
+
+    # ------------------------------------------------------------------ #
+    # Profile update
+    # ------------------------------------------------------------------ #
+    def _load_profile(self) -> None:
+        if self._current_user is None:
+            self._profile_data = None
+            self.txtProfileFirstName.clear()
+            self.txtProfileLastName.clear()
+            self.txtProfileNationalID.clear()
+            self.txtProfileUsername.clear()
+            self.txtProfileMobile.clear()
+            return
+
+        profile = self._user_controller.get_user(self._current_user.UserID)
+        self._profile_data = profile
+
+        if not profile:
+            self.txtProfileFirstName.clear()
+            self.txtProfileLastName.clear()
+            self.txtProfileNationalID.clear()
+            self.txtProfileUsername.clear()
+            self.txtProfileMobile.clear()
+            return
+
+        self.txtProfileFirstName.setText(profile.get("first_name", ""))
+        self.txtProfileLastName.setText(profile.get("last_name", ""))
+        self.txtProfileNationalID.setText(profile.get("national_id", ""))
+        self.txtProfileUsername.setText(profile.get("username", ""))
+        self.txtProfileMobile.setText(profile.get("mobile", ""))
+
+    def _on_save_profile_clicked(self) -> None:
+        if self._current_user is None:
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                self._translator["settings.change_password.error.no_user"],
+            )
+            return
+
+        mobile = self.txtProfileMobile.text().strip()
+        if not mobile:
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                "Mobile number is required.",
+            )
+            return
+
+        if not re.fullmatch(r"09\d{9}", mobile):
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                "Mobile number must start with '09' and be 11 digits.",
+            )
+            return
+
+        try:
+            self._user_controller.update_mobile(
+                user_id=self._current_user.UserID,
+                mobile=mobile,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                str(exc),
+            )
+            return
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            self._translator["dialog.info_title"],
+            "Profile updated successfully.",
+        )
+        self._load_profile()
 
     # ------------------------------------------------------------------ #
     # Slots

@@ -25,4 +25,6 @@ htmlcov/
 
 # Qt Designer backup files
 *.ui~
-logs/
+
+# Application logs
+logs/hms_app.log

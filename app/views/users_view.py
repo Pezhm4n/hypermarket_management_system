@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import re
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from PyQt6 import uic
-from PyQt6.QtCore import Qt, QRegularExpression
+from PyQt6.QtCore import QDate, Qt, QRegularExpression
 from PyQt6.QtGui import QRegularExpressionValidator
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QDateEdit,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -321,14 +324,30 @@ class UserDialog(QDialog):
 
         self.txtFirstName = QLineEdit(self)
         self.txtLastName = QLineEdit(self)
+        self.txtNationalID = QLineEdit(self)
         self.txtMobile = QLineEdit(self)
+        self.dateHireDate = QDateEdit(self)
+        self.dateHireDate.setCalendarPopup(True)
+        self.dateHireDate.setDisplayFormat("yyyy-MM-dd")
+
         self.txtUsername = QLineEdit(self)
         self.txtPassword = QLineEdit(self)
         self.txtPassword.setEchoMode(QLineEdit.EchoMode.Password)
+        self.txtConfirmPassword = QLineEdit(self)
+        self.txtConfirmPassword.setEchoMode(QLineEdit.EchoMode.Password)
         self.cmbRole = QComboBox(self)
 
         # Validators
-        mobile_regex = QRegularExpression(r"\\d{0,11}")
+        name_regex = QRegularExpression(r"[A-Za-z]{0,50}")
+        self.txtFirstName.setValidator(QRegularExpressionValidator(name_regex, self))
+        self.txtLastName.setValidator(QRegularExpressionValidator(name_regex, self))
+
+        national_id_regex = QRegularExpression(r"\d{0,10}")
+        self.txtNationalID.setValidator(
+            QRegularExpressionValidator(national_id_regex, self)
+        )
+
+        mobile_regex = QRegularExpression(r"\d{0,11}")
         self.txtMobile.setValidator(QRegularExpressionValidator(mobile_regex, self))
 
         username_regex = QRegularExpression(r"[A-Za-z0-9]{0,32}")
@@ -342,10 +361,12 @@ class UserDialog(QDialog):
             self._translator["users.dialog.field.last_name"],
             self.txtLastName,
         )
+        form_layout.addRow("National ID", self.txtNationalID)
         form_layout.addRow(
             self._translator["users.dialog.field.mobile"],
             self.txtMobile,
         )
+        form_layout.addRow("Hire Date", self.dateHireDate)
         form_layout.addRow(
             self._translator["users.dialog.field.username"],
             self.txtUsername,
@@ -354,6 +375,7 @@ class UserDialog(QDialog):
             self._translator["users.dialog.field.password"],
             self.txtPassword,
         )
+        form_layout.addRow("Confirm password", self.txtConfirmPassword)
         form_layout.addRow(
             self._translator["users.dialog.field.role"],
             self.cmbRole,
@@ -374,6 +396,9 @@ class UserDialog(QDialog):
 
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnCancel.clicked.connect(self.reject)
+
+        # Default hire date to today for new users
+        self.dateHireDate.setDate(QDate.currentDate())
 
     def _populate_roles(self) -> None:
         self.cmbRole.clear()
@@ -396,9 +421,18 @@ class UserDialog(QDialog):
     def _load_user_into_form(self, user_data: Dict[str, Any]) -> None:
         self.txtFirstName.setText(user_data.get("first_name", ""))
         self.txtLastName.setText(user_data.get("last_name", ""))
+        self.txtNationalID.setText(user_data.get("national_id", ""))
         self.txtMobile.setText(user_data.get("mobile", ""))
         self.txtUsername.setText(user_data.get("username", ""))
         # Password is intentionally left blank for security; fill only when changing.
+
+        hire_date = user_data.get("hire_date")
+        if isinstance(hire_date, (datetime, date)):
+            self.dateHireDate.setDate(
+                QDate(hire_date.year, hire_date.month, hire_date.day)
+            )
+        else:
+            self.dateHireDate.setDate(QDate.currentDate())
 
         role_title = user_data.get("role", "")
         if role_title:
@@ -416,13 +450,23 @@ class UserDialog(QDialog):
     def _on_save_clicked(self) -> None:
         first_name = self.txtFirstName.text().strip()
         last_name = self.txtLastName.text().strip()
+        national_id = self.txtNationalID.text().strip()
         mobile = self.txtMobile.text().strip()
         username = self.txtUsername.text().strip()
         password = self.txtPassword.text()
+        confirm_password = self.txtConfirmPassword.text()
         role_title = self.cmbRole.currentText().strip()
+        hire_qdate = self.dateHireDate.date()
 
         # Basic required fields
-        if not first_name or not last_name or not mobile or not username or not role_title:
+        if (
+            not first_name
+            or not last_name
+            or not national_id
+            or not mobile
+            or not username
+            or not role_title
+        ):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
@@ -430,21 +474,33 @@ class UserDialog(QDialog):
             )
             return
 
-        # Validate first/last name are not purely numeric and not just spaces
-        if first_name.isdigit() or last_name.isdigit():
+        # First/Last name must contain English letters only
+        name_pattern = re.compile(r"^[A-Za-z]+$")
+        if not name_pattern.fullmatch(first_name) or not name_pattern.fullmatch(
+            last_name
+        ):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                self._translator["users.dialog.error.required_fields"],
+                "First and last name must contain English letters only.",
             )
             return
 
-        # Validate mobile length (10-11 digits)
-        if not (mobile.isdigit() and 10 <= len(mobile) <= 11):
+        # National ID: exactly 10 digits
+        if not re.fullmatch(r"\d{10}", national_id):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                self._translator["users.dialog.error.required_fields"],
+                "National ID must be exactly 10 digits.",
+            )
+            return
+
+        # Mobile: must start with 09 and be 11 digits in total
+        if not re.fullmatch(r"09\d{9}", mobile):
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                "Mobile number must start with '09' and be 11 digits.",
             )
             return
 
@@ -458,14 +514,40 @@ class UserDialog(QDialog):
             )
             return
 
-        # For new users, password is mandatory; for edits, it's optional.
+        # Password / confirmation validation
         if self._user_data is None and not password:
+            # For new users, password is mandatory.
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
                 self._translator["users.dialog.error.password_required"],
             )
             return
+
+        if password or confirm_password:
+            if len(password) < 4:
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    "Password must be at least 4 characters long.",
+                )
+                return
+            if password != confirm_password:
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    "Password and confirmation do not match.",
+                )
+                return
+
+        # Convert hire date to Python datetime (date-only)
+        hire_date: Optional[datetime] = None
+        if hire_qdate and hire_qdate.isValid():
+            hire_date = datetime(
+                hire_qdate.year(),
+                hire_qdate.month(),
+                hire_qdate.day(),
+            )
 
         try:
             if self._user_data is None:
@@ -476,6 +558,8 @@ class UserDialog(QDialog):
                     username=username,
                     password=password,
                     role_title=role_title,
+                    national_id=national_id,
+                    hire_date=hire_date,
                 )
             else:
                 user_id = int(self._user_data["user_id"])
@@ -488,6 +572,8 @@ class UserDialog(QDialog):
                     username=username,
                     new_password=new_password,
                     role_title=role_title,
+                    national_id=national_id,
+                    hire_date=hire_date,
                 )
         except ValueError as exc:
             QMessageBox.warning(

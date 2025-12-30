@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 import bcrypt
 import logging
+import re
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -29,6 +31,33 @@ class UserController:
 
     def _get_session(self) -> Session:
         return self._session_factory()
+
+    def _validate_name(self, value: str, field_label: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError(f"{field_label} is required.")
+        if not re.fullmatch(r"[A-Za-z]+", value):
+            raise ValueError(f"{field_label} must contain English letters only.")
+        return value
+
+    def _validate_mobile(self, mobile: str) -> str:
+        mobile = mobile.strip()
+        if not re.fullmatch(r"09\d{9}", mobile):
+            raise ValueError("Mobile number must start with '09' and be 11 digits.")
+        return mobile
+
+    def _validate_national_id(self, national_id: str) -> str:
+        national_id = national_id.strip()
+        if not re.fullmatch(r"\d{10}", national_id):
+            raise ValueError("National ID must be exactly 10 digits.")
+        return national_id
+
+    def _validate_password(self, password: str, field_label: str = "Password") -> str:
+        if not password:
+            raise ValueError(f"{field_label} is required.")
+        if len(password) < 4:
+            raise ValueError(f"{field_label} must be at least 4 characters long.")
+        return password
 
     # ------------------------------------------------------------------ #
     # Role helpers
@@ -148,6 +177,8 @@ class UserController:
                 "emp_id": employee.EmpID,
                 "first_name": employee.FirstName,
                 "last_name": employee.LastName,
+                "national_id": employee.NationalID,
+                "hire_date": employee.HireDate,
                 "mobile": employee.Mobile,
                 "username": user.Username,
                 "role": role_title,
@@ -165,22 +196,27 @@ class UserController:
         username: str,
         password: str,
         role_title: str,
+        national_id: str,
+        hire_date: Optional[datetime],
     ) -> UserAccount:
         """
         Create a new Employee + UserAccount + UserRole in a single transaction.
         """
-        first_name = first_name.strip()
-        last_name = last_name.strip()
-        mobile = mobile.strip()
+        first_name = self._validate_name(first_name, "First name")
+        last_name = self._validate_name(last_name, "Last name")
+        mobile = self._validate_mobile(mobile)
         username = username.strip()
         role_title = role_title.strip()
+        national_id = self._validate_national_id(national_id)
 
-        if not first_name or not last_name or not mobile or not username:
-            raise ValueError("All fields except password are required.")
-        if not password:
-            raise ValueError("Password is required for new users.")
+        if not username:
+            raise ValueError("Username is required.")
         if not role_title:
             raise ValueError("Role is required for new users.")
+        password = self._validate_password(password, "Password")
+
+        if hire_date is None:
+            raise ValueError("Hire date is required.")
 
         with self._get_session() as session:
             with session.begin():
@@ -193,18 +229,28 @@ class UserController:
                 if existing_user is not None:
                     raise ValueError("Username is already taken.")
 
-                existing_emp = (
+                existing_emp_mobile = (
                     session.query(Employee)
                     .filter(Employee.Mobile == mobile)
                     .first()
                 )
-                if existing_emp is not None:
+                if existing_emp_mobile is not None:
                     raise ValueError("Mobile number is already used for another employee.")
+
+                existing_emp_nid = (
+                    session.query(Employee)
+                    .filter(Employee.NationalID == national_id)
+                    .first()
+                )
+                if existing_emp_nid is not None:
+                    raise ValueError("National ID is already used for another employee.")
 
                 employee = Employee(
                     FirstName=first_name,
                     LastName=last_name,
                     Mobile=mobile,
+                    NationalID=national_id,
+                    HireDate=hire_date,
                     IsActive=True,
                 )
                 session.add(employee)
@@ -242,20 +288,25 @@ class UserController:
         username: str,
         new_password: Optional[str],
         role_title: str,
+        national_id: str,
+        hire_date: Optional[datetime],
     ) -> None:
         """
         Update Employee + UserAccount (+ primary UserRole) details.
         """
-        first_name = first_name.strip()
-        last_name = last_name.strip()
-        mobile = mobile.strip()
+        first_name = self._validate_name(first_name, "First name")
+        last_name = self._validate_name(last_name, "Last name")
+        mobile = self._validate_mobile(mobile)
         username = username.strip()
         role_title = role_title.strip()
+        national_id = self._validate_national_id(national_id)
 
-        if not first_name or not last_name or not mobile or not username:
-            raise ValueError("All fields except password are required.")
+        if not username:
+            raise ValueError("Username is required.")
         if not role_title:
             raise ValueError("Role is required.")
+        if hire_date is None:
+            raise ValueError("Hire date is required.")
 
         with self._get_session() as session:
             with session.begin():
@@ -279,7 +330,7 @@ class UserController:
                 if existing_user is not None:
                     raise ValueError("Username is already taken by another user.")
 
-                existing_emp = (
+                existing_emp_mobile = (
                     session.query(Employee)
                     .filter(
                         Employee.Mobile == mobile,
@@ -287,18 +338,36 @@ class UserController:
                     )
                     .first()
                 )
-                if existing_emp is not None:
+                if existing_emp_mobile is not None:
                     raise ValueError(
                         "Mobile number is already used for another employee."
+                    )
+
+                existing_emp_nid = (
+                    session.query(Employee)
+                    .filter(
+                        Employee.NationalID == national_id,
+                        Employee.EmpID != employee.EmpID,
+                    )
+                    .first()
+                )
+                if existing_emp_nid is not None:
+                    raise ValueError(
+                        "National ID is already used for another employee."
                     )
 
                 employee.FirstName = first_name
                 employee.LastName = last_name
                 employee.Mobile = mobile
+                employee.NationalID = national_id
+                employee.HireDate = hire_date
 
                 user.Username = username
 
                 if new_password:
+                    new_password = self._validate_password(
+                        new_password, "New password"
+                    )
                     hashed = bcrypt.hashpw(
                         new_password.encode("utf-8"),
                         bcrypt.gensalt(),
@@ -344,4 +413,43 @@ class UserController:
                     "Soft-deleted user '%s' (UserID=%s)",
                     user.Username,
                     user.UserID,
+                )
+
+    def update_mobile(self, user_id: int, mobile: str) -> None:
+        """
+        Update the mobile number for the given user while enforcing uniqueness
+        and format rules.
+        """
+        mobile = self._validate_mobile(mobile)
+
+        with self._get_session() as session:
+            with session.begin():
+                user: Optional[UserAccount] = session.get(UserAccount, user_id)
+                if user is None:
+                    raise ValueError("User not found.")
+
+                employee: Optional[Employee] = user.employee
+                if employee is None:
+                    raise ValueError("Related employee record not found.")
+
+                existing_emp = (
+                    session.query(Employee)
+                    .filter(
+                        Employee.Mobile == mobile,
+                        Employee.EmpID != employee.EmpID,
+                    )
+                    .first()
+                )
+                if existing_emp is not None:
+                    raise ValueError(
+                        "Mobile number is already used for another employee."
+                    )
+
+                employee.Mobile = mobile
+
+                logger.info(
+                    "Updated mobile for user '%s' (UserID=%s, EmpID=%s)",
+                    user.Username,
+                    user.UserID,
+                    employee.EmpID,
                 )

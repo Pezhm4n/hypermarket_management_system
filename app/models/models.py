@@ -59,6 +59,8 @@ class UserAccount(Base):
     PasswordHash = Column(String, nullable=False)
     LastLogin = Column(DateTime)
     IsLocked = Column(Boolean, server_default=text("false"))
+    FailedLoginAttempts = Column(Integer, server_default=text("0"))
+    LockoutUntil = Column(DateTime, nullable=True)
     CreatedAt = Column(DateTime, server_default=func.now())
     EmpID = Column(
         Integer,
