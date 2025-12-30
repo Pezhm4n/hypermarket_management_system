@@ -1,0 +1,233 @@
+/* =========================================================================
+   Global
+   ========================================================================= */
+
+QWidget {
+    background-color: #0f172a; /* Slate 900 */
+    color: #f9fafb;           /* Gray 50 */
+    font-family: "Segoe UI", "Vazir", "Tahoma";
+    font-size: 11pt;
+}
+
+/* Scrollbars */
+QScrollBar:vertical,
+QScrollBar:horizontal {
+    background: transparent;
+    border: none;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical,
+QScrollBar::handle:horizontal {
+    background-color: #4b5563; /* Gray 600 */
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover {
+    background-color: #6b7280; /* Gray 500 */
+}
+
+QScrollBar::add-line,
+QScrollBar::sub-line {
+    background: none;
+    border: none;
+}
+
+/* =========================================================================
+   Main Window / Content
+   ========================================================================= */
+
+QMainWindow {
+    background-color: #020617; /* Slate 950 */
+}
+
+QWidget#centralWidget,
+QWidget#ContentArea {
+    background-color: #020617;
+}
+
+/* Header bar */
+QFrame#HeaderBar {
+    background-color: #020617;
+    border-bottom: 1px solid #1f2933;
+}
+
+QLabel#HeaderTitle {
+    font-size: 15pt;
+    font-weight: 600;
+}
+
+QLabel#HeaderSubtitle {
+    font-size: 10pt;
+    color: #9ca3af; /* Gray 400 */
+}
+
+QLabel#HeaderUserLabel {
+    font-size: 10pt;
+    color: #9ca3af;
+}
+
+/* =========================================================================
+   Sidebar
+   ========================================================================= */
+
+QFrame#Sidebar {
+    background-color: #111827;      /* Slate 900 */
+    border-right: 1px solid #1f2937;
+}
+
+QLabel#SidebarTitle {
+    font-size: 16pt;
+    font-weight: 600;
+    color: #e5e7eb;                 /* Gray 200 */
+}
+
+/* Navigation buttons */
+QPushButton[role="nav"] {
+    background-color: transparent;
+    color: #d1d5db;                 /* Gray 300 */
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    text-align: left;
+}
+
+QPushButton[role="nav"]:hover {
+    background-color: #1f2933;      /* Slightly lighter for hover */
+}
+
+QPushButton[role="nav"]:checked {
+    background-color: #0ea5e9;      /* Sky 500 */
+    color: #020617;
+}
+
+/* Language buttons */
+QPushButton[role="language"] {
+    min-width: 36px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid #374151;
+    background-color: transparent;
+    color: #d1d5db;
+}
+
+QPushButton[role="language"]:checked {
+    background-color: #0ea5e9;
+    border-color: #38bdf8;
+    color: #020617;
+}
+
+/* Logout button */
+QPushButton[role="logout"] {
+    padding: 6px 12px;
+    border-radius: 6px;
+    background-color: #b91c1c;  /* Red 700 */
+    color: #f9fafb;
+    border: none;
+}
+
+QPushButton[role="logout"]:hover {
+    background-color: #dc2626;  /* Red 600 */
+}
+
+/* =========================================================================
+   Inputs / Tables
+   ========================================================================= */
+
+QLineEdit,
+QPlainTextEdit,
+QTextEdit,
+QSpinBox,
+QDoubleSpinBox,
+QComboBox {
+    background-color: #020617;
+    border: 1px solid #374151;      /* Gray 700 */
+    border-radius: 6px;
+    padding: 4px 6px;
+    selection-background-color: #0ea5e9;
+    selection-color: #020617;
+}
+
+QLineEdit:focus,
+QPlainTextEdit:focus,
+QTextEdit:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QComboBox:focus {
+    border: 1px solid #0ea5e9;
+}
+
+/* Tables */
+QHeaderView::section {
+    background-color: #111827;
+    color: #e5e7eb;
+    padding: 4px 8px;
+    border: none;
+    border-bottom: 1px solid #1f2937;
+}
+
+QTableView,
+QTableWidget {
+    background-color: #020617;
+    gridline-color: #1f2937;
+    selection-background-color: #0ea5e9;
+    selection-color: #020617;
+}
+
+/* =========================================================================
+   Buttons (general)
+   ========================================================================= */
+
+QPushButton {
+    background-color: #0ea5e9;      /* Sky 500 */
+    color: #020617;
+    border-radius: 6px;
+    padding: 6px 12px;
+    border: none;
+}
+
+QPushButton:hover {
+    background-color: #38bdf8;      /* Sky 400 */
+}
+
+QPushButton:pressed {
+    background-color: #0284c7;      /* Sky 600 */
+}
+
+QPushButton:disabled {
+    background-color: #1e293b;
+    color: #6b7280;
+}
+
+/* Do not override nav / language / logout roles */
+QPushButton[role="nav"],
+QPushButton[role="language"],
+QPushButton[role="logout"] {
+    /* Intentionally empty – styles defined above take precedence */
+}
+
+/* =========================================================================
+   Labels / Error text
+   ========================================================================= */
+
+QLabel#errorLabel,
+QLabel#LoginErrorLabel {
+    color: #f97316; /* Orange 500 */
+}
+
+/* =========================================================================
+   Group boxes / frames
+   ========================================================================= */
+
+QGroupBox {
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    margin-top: 12px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 4px;
+}

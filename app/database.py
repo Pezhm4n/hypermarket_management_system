@@ -1,45 +1,71 @@
-import os
-from typing import Generator
+from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import Generator, Iterator
+
+import logging
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
-# In production, set HMS_DATABASE_URL in your environment, e.g.:
-# export HMS_DATABASE_URL="postgresql+psycopg2://user:password@localhost:5432/hms_db"
-DATABASE_URL = os.getenv(
-    "HMS_DATABASE_URL",
-    "postgresql+psycopg2://postgres:123456@localhost:5432/hms_db",
-)
+from app.config import CONFIG
+
+logger = logging.getLogger(__name__)
 
 # Singleton engine for the entire application
 engine = create_engine(
-    DATABASE_URL,
+    CONFIG.database_url,
     echo=False,  # Set to True during debugging if you want SQL logging
     future=True,
 )
 
-# Factory for new Session objects
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
+# Factory for new Session objects.  ``expire_on_commit=False`` prevents ORM
+# instances from being invalidated after commit, which avoids common
+# DetachedInstanceError issues when model instances are passed to the UI layer.
+SessionLocal = sessionmaker(
+    bind=engine,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+    class_=Session,
+)
 
 
-def get_session() -> Generator:
+@contextmanager
+def session_scope() -> Iterator[Session]:
     """
-    Yield a SQLAlchemy Session and ensure it is properly closed.
+    Provide a transactional scope around a series of operations.
 
-    Usage example:
+    Example
+    -------
+    >>> from app.database import session_scope
+    >>> with session_scope() as session:
+    ...     # use session here
+    ...     ...
 
-        from app.database import get_session
-        import contextlib
-
-        with contextlib.contextmanager(get_session)() as session:
-            # use session inside the context
-            ...
-
-    This pattern integrates nicely with frameworks that support
-    generator-based dependency injection.
+    The session is committed if no exception occurs; otherwise it is rolled
+    back. In both cases the session is properly closed.
     """
-    db = SessionLocal()
+    session: Session = SessionLocal()
     try:
-        yield db
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Session rolled back due to an exception.")
+        raise
     finally:
-        db.close()
+        session.close()
+
+
+def get_session() -> Generator[Session, None, None]:
+    """
+    Backwards-compatible generator-based session helper.
+
+    Prefer :func:`session_scope` in new code. This helper simply yields a
+    session and ensures it is closed afterwards.
+    """
+    session: Session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()

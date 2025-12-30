@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, Callable, TypeVar
+from typing import Callable, Optional, TypeVar
 
 import bcrypt
+import logging
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -11,6 +12,8 @@ from app.models.models import Employee, UserAccount
 
 SessionFactory = Callable[[], Session]
 TUserAccount = TypeVar("TUserAccount", bound=UserAccount)
+
+logger = logging.getLogger(__name__)
 
 
 class AuthController:
@@ -45,22 +48,75 @@ class AuthController:
             )
 
             if user is None:
+                logger.info("Login failed: unknown username '%s'", username)
                 return None
 
             if user.IsLocked:
+                logger.warning("Login attempt for locked account '%s'", username)
                 return None
 
             password_bytes = password.encode("utf-8")
             stored_hash = user.PasswordHash.encode("utf-8")
 
             if not bcrypt.checkpw(password_bytes, stored_hash):
+                logger.info("Login failed: invalid password for '%s'", username)
                 return None
 
             user.LastLogin = datetime.utcnow()
             session.add(user)
             session.commit()
 
+            logger.info("User '%s' logged in successfully.", username)
             return user
+
+    def change_password(
+        self,
+        user_id: int,
+        current_password: str,
+        new_password: str,
+    ) -> bool:
+        """
+        Change the password for a given user.
+
+        Returns True if the password was changed successfully, or False if the
+        current password is incorrect or the user could not be found.
+        """
+        if not current_password or not new_password:
+            raise ValueError("Passwords must not be empty.")
+
+        with self._get_session() as session:
+            user: Optional[UserAccount] = session.get(UserAccount, user_id)
+            if user is None:
+                logger.warning(
+                    "Password change requested for unknown user_id=%s",
+                    user_id,
+                )
+                return False
+
+            if user.IsLocked:
+                logger.warning(
+                    "Password change requested for locked user '%s'",
+                    user.Username,
+                )
+                return False
+
+            password_bytes = current_password.encode("utf-8")
+            stored_hash = user.PasswordHash.encode("utf-8")
+
+            if not bcrypt.checkpw(password_bytes, stored_hash):
+                logger.info(
+                    "Password change failed: incorrect current password for '%s'",
+                    user.Username,
+                )
+                return False
+
+            new_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt())
+            user.PasswordHash = new_hash.decode("utf-8")
+            session.add(user)
+            session.commit()
+
+            logger.info("Password changed successfully for user '%s'", user.Username)
+            return True
 
     def create_default_admin(self) -> None:
         """
@@ -114,3 +170,4 @@ class AuthController:
             )
             session.add(user)
             session.commit()
+            logger.info("Default admin user 'admin' ensured in database.")

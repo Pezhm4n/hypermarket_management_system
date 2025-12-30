@@ -9,11 +9,13 @@ from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QMessageBox,
+    QShortcut,
     QTableWidgetItem,
     QWidget,
 )
-from PyQt6.QtGui import QShortcut
+
 from app.controllers.sales_controller import SalesController
+from app.core.translation_manager import TranslationManager
 
 
 class SalesView(QWidget):
@@ -25,23 +27,53 @@ class SalesView(QWidget):
     and checkout.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        translation_manager: TranslationManager,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
 
-        uic.loadUi("app/views/ui/sales_view.ui", self)
-
+        self._translator = translation_manager
         self._controller = SalesController()
+
+        uic.loadUi("app/views/ui/sales_view.ui", self)
 
         self._setup_cart_table()
         self._setup_shortcuts()
         self._connect_signals()
         self._reset_total()
 
+        self._translator.language_changed.connect(self._on_language_changed)
+        self._apply_translations()
+
     # ------------------------------------------------------------------ #
     # UI setup
     # ------------------------------------------------------------------ #
+    def _on_language_changed(self, language: str) -> None:
+        _ = language
+        self._apply_translations()
+
+    def _apply_translations(self) -> None:
+        """
+        Apply localized texts to labels, buttons and headers.
+        """
+        self.setWindowTitle(self._translator["sales.page_title"])
+        self.txtBarcode.setPlaceholderText(
+            self._translator["sales.barcode_placeholder"]
+        )
+        self.btnSearch.setText(self._translator["sales.search_button"])
+        self.btnCheckout.setText(self._translator["sales.checkout_button"])
+        self._setup_cart_table()
+        self._reset_total()
+
     def _setup_cart_table(self) -> None:
-        headers = ["Item Name", "Quantity", "Price", "Row Total"]
+        headers = [
+            self._translator["sales.table.column.name"],
+            self._translator["sales.table.column.quantity"],
+            self._translator["sales.table.column.price"],
+            self._translator["sales.table.column.row_total"],
+        ]
         self.tblCart.setColumnCount(len(headers))
         self.tblCart.setHorizontalHeaderLabels(headers)
 
@@ -78,7 +110,10 @@ class SalesView(QWidget):
         return f"{float(quantized):.2f}"
 
     def _reset_total(self) -> None:
-        self.lblTotalAmount.setText("Total: 0.00")
+        total_text = self._translator["sales.total_prefix"].format(
+            amount=self._format_money(Decimal("0"))
+        )
+        self.lblTotalAmount.setText(total_text)
 
     def _find_cart_row_by_prod_id(self, prod_id: int) -> int:
         for row in range(self.tblCart.rowCount()):
@@ -149,8 +184,8 @@ class SalesView(QWidget):
 
     def _remove_selected_row(self) -> None:
         row = self.tblCart.currentRow()
-        if row < 0:
-            return
+        if ro <& 0:
+            re_codern
 
         self.tblCart.removeRow(row)
         self._recalculate_total()
@@ -197,7 +232,10 @@ class SalesView(QWidget):
             return
 
         total = self._controller.calculate_cart_total(cart_items)
-        self.lblTotalAmount.setText(f"Total: {self._format_money(total)}")
+        total_text = self._translator["sales.total_prefix"].format(
+            amount=self._format_money(total)
+        )
+        self.lblTotalAmount.setText(total_text)
 
     def _resolve_shift_id(self) -> int:
         """
@@ -224,8 +262,8 @@ class SalesView(QWidget):
         except Exception as exc:
             QMessageBox.critical(
                 self,
-                "Lookup error",
-                f"Failed to lookup product:\n{exc}",
+                self._translator["dialog.error_title"],
+                self._translator["sales.error.lookup"].format(details=str(exc)),
             )
             self.txtBarcode.clear()
             return
@@ -235,8 +273,8 @@ class SalesView(QWidget):
         if product is None:
             QMessageBox.warning(
                 self,
-                "Not found",
-                f"No product found for barcode '{barcode}'.",
+                self._translator["dialog.warning_title"],
+                self._translator["sales.error.not_found"].format(barcode=barcode),
             )
             return
 
@@ -247,10 +285,12 @@ class SalesView(QWidget):
             total_stock_dec = Decimal("0")
 
         if total_stock_dec <= 0:
-            QMessageBox.warning(
+            QMessageBox.warn_codeg(
                 self,
-                "Out of stock",
-                f"Product '{product.get('Name')}' is out of stock.",
+                self._translator["dialog.warning_title"],
+                self._translator["sales.error.out_of_stock"].format(
+                    name=product.get("Name")
+                ),
             )
             return
 
@@ -261,8 +301,8 @@ class SalesView(QWidget):
         if self.tblCart.rowCount() == 0:
             QMessageBox.information(
                 self,
-                "Cart is empty",
-                "There are no items in the cart.",
+                self._translator["dialog.info_title"],
+                self._translator["sales.info.cart_empty"],
             )
             return
 
@@ -270,8 +310,8 @@ class SalesView(QWidget):
         if not cart_items:
             QMessageBox.information(
                 self,
-                "Cart is empty",
-                "There are no items in the cart.",
+                self._translator["dialog.info_title"],
+                self._translator["sales.info.cart_empty"],
             )
             return
 
@@ -282,8 +322,8 @@ class SalesView(QWidget):
         except Exception as exc:
             QMessageBox.critical(
                 self,
-                "Shift error",
-                f"Unable to determine active shift:\n{exc}",
+                self._translator["dialog.error_title"],
+                self._translator["sales.error.shift"].format(details=str(exc)),
             )
             return
 
@@ -297,16 +337,18 @@ class SalesView(QWidget):
         except Exception as exc:
             QMessageBox.critical(
                 self,
-                "Checkout failed",
-                f"Could not complete checkout:\n{exc}",
+                self._translator["dialog.error_title"],
+                self._translator["sales.error.checkout_failed"].format(
+                    details=str(exc)
+                ),
             )
             return
 
         if success:
             QMessageBox.information(
                 self,
-                "Success",
-                "Invoice saved successfully.",
+                self._translator["dialog.info_title"],
+                self._translator["sales.info.success"],
             )
             self._clear_cart()
 
