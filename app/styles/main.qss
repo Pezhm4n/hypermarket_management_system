@@ -6,7 +6,6 @@ QWidget {
     background-color: #0f172a; /* Slate 900 */
     color: #f9fafb;           /* Gray 50 */
     font-family: "Vazirmatn", "Segoe UI", "Tahoma", "sans-serif";
-    font-size: 11pt;
 }
 
 /* Scrollbars */
@@ -175,6 +174,15 @@ QSpinBox:focus,
 QDoubleSpinBox:focus,
 QComboBox:focus {
     border: 1px solid #0ea5e9;
+}
+
+/* Compact, professional input sizing */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+    min-height: 32px;      /* Standard professional height */
+    padding: 4px 8px;      /* Comfortable but not huge */
+    border: 1px solid #374151;
+    border-radius: 6px;
+    background-color: #020617;
 }
 
 /* Tables */

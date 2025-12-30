@@ -5,6 +5,7 @@ import sys
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import CONFIG
@@ -22,10 +23,26 @@ logger = logging.getLogger(__name__)
 
 def init_database() -> None:
     """
-    Initialize the database schema if it does not already exist.
+    Initialize the database schema if it does not already exist and apply
+    lightweight migrations for new columns.
     """
     try:
         Base.metadata.create_all(bind=engine)
+
+        # Lightweight migration: ensure new columns exist on existing tables.
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        'ALTER TABLE "shift" '
+                        'ADD COLUMN IF NOT EXISTS "CashFloat" NUMERIC(12, 2);'
+                    )
+                )
+        except Exception:
+            logger.exception(
+                "Failed to apply lightweight migrations during database init."
+            )
+
         logger.info("Database connection successful; tables created/verified.")
     except SQLAlchemyError:
         logger.exception("Database initialization failed.")

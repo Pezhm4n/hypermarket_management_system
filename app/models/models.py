@@ -365,6 +365,7 @@ class Shift(Base):
     StartCash = Column(Numeric(12, 2))
     EndCash = Column(Numeric(12, 2))
     SystemCalculatedCash = Column(Numeric(12, 2))
+    CashFloat = Column(Numeric(12, 2))
     Status = Column(String)  # Open, Closed
 
     # Relationships

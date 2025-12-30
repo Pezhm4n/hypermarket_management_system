@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import logging
 import re
+import jdatetime
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -201,7 +202,7 @@ class InventoryController:
         is_perishable: bool,
         initial_quantity: Any,
         buy_price: Any,
-        expiry_date: Optional[date] = None,
+        expiry_date_jalali: Optional[str] = None,
     ) -> Product:
         """
         Create a new Product and an initial InventoryBatch in a single transaction.
@@ -218,6 +219,20 @@ class InventoryController:
         base_price_dec = self._validate_price(base_price, "Base price")
         initial_qty_dec = self._validate_quantity(initial_quantity, "Initial quantity")
         buy_price_dec = self._validate_price(buy_price, "Purchase price")
+
+        expiry_date_gregorian: Optional[date] = None
+        if is_perishable:
+            if not expiry_date_jalali:
+                raise ValueError("INVALID_JALALI_DATE")
+            try:
+                parts = expiry_date_jalali.split("/")
+                if len(parts) != 3:
+                    raise ValueError("INVALID_JALALI_DATE")
+                year, month, day = map(int, parts)
+                j_date = jdatetime.date(year, month, day)
+                expiry_date_gregorian = j_date.togregorian()
+            except Exception as exc:
+                raise ValueError("INVALID_JALALI_DATE") from exc
 
         with self._get_session() as session:
             with session.begin():
@@ -248,7 +263,7 @@ class InventoryController:
                         OriginalQuantity=initial_qty_dec,
                         CurrentQuantity=initial_qty_dec,
                         BuyPrice=buy_price_dec,
-                        ExpiryDate=expiry_date,
+                        ExpiryDate=expiry_date_gregorian,
                     )
                     session.add(batch)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Dict, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -16,12 +17,15 @@ from PyQt6.QtWidgets import (
 )
 
 from app.controllers.auth_controller import AuthController
+from app.controllers.sales_controller import SalesController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
 from app.views.inventory_view import InventoryView
 from app.views.sales_view import SalesView
 from app.views.settings_view import SettingsView
 from app.views.users_view import UsersView
+
+logger = logging.getLogger(__name__)
 
 
 class MainView(QMainWindow):
@@ -48,6 +52,7 @@ class MainView(QMainWindow):
 
         self._auth_controller = auth_controller
         self._translator = translation_manager
+        self._sales_controller = SalesController()
 
         self.current_user: Optional[UserAccount] = None
 
@@ -62,6 +67,7 @@ class MainView(QMainWindow):
 
         self._translator.language_changed.connect(self._on_language_changed)
         self._apply_translations()
+        self.refresh_dashboard_stats()
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -193,7 +199,7 @@ class MainView(QMainWindow):
         """
         Instantiate module views and add them as pages in the stacked widget.
         """
-        # Dashboard page (simple welcome placeholder for now)
+        # Dashboard page (simple stats placeholder)
         dashboard_page = QWidget(self.stacked_widget)
         dashboard_layout = QVBoxLayout(dashboard_page)
         dashboard_layout.setContentsMargins(0, 0, 0, 0)
@@ -202,7 +208,7 @@ class MainView(QMainWindow):
         lbl_dashboard = QLabel(dashboard_page)
         lbl_dashboard.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dashboard_layout.addWidget(lbl_dashboard)
-        self._dashboard_label = lbl_dashboard  # used for translation
+        self._dashboard_label = lbl_dashboard  # used for dashboard stats
 
         # Sales / Inventory modules
         self.sales_view = SalesView(self._translator, parent=self.stacked_widget)
@@ -269,6 +275,7 @@ class MainView(QMainWindow):
     def _on_language_changed(self, language: str) -> None:
         _ = language
         self._apply_translations()
+        self.refresh_dashboard_stats()
 
     def _apply_translations(self) -> None:
         """
@@ -345,6 +352,9 @@ class MainView(QMainWindow):
 
         self._update_header_for_page(page_key)
 
+        if page_key == "dashboard":
+            self.refresh_dashboard_stats()
+
     def _update_header_for_page(self, page_key: str) -> None:
         section_keys = {
             "dashboard": "main.section.dashboard",
@@ -359,6 +369,38 @@ class MainView(QMainWindow):
             self.lblSectionTitle.setText(self._translator[key])
 
     # ------------------------------------------------------------------ #
+    # Dashboard stats
+    # ------------------------------------------------------------------ #
+    def refresh_dashboard_stats(self) -> None:
+        """
+        Refresh top-level dashboard statistics (today's sales and invoices).
+        """
+        try:
+            stats = self._sales_controller.get_today_dashboard_stats()
+            total_sales = stats.get("total_sales")
+            invoice_count = stats.get("invoice_count")
+
+            if total_sales is None or invoice_count is None:
+                return
+
+            formatted_total = f"{float(total_sales):,.0f}"
+            title = self._translator["main.section.dashboard"]
+
+            self._dashboard_label.setText(
+                f"{title}\n\n"
+                f"Total Sales Today: {formatted_total}\n"
+                f"Invoices Today: {invoice_count}"
+            )
+
+            logger.info(
+                "Dashboard stats updated: total_sales=%s, invoice_count=%s",
+                formatted_total,
+                invoice_count,
+            )
+        except Exception as e:
+            logger.error("Error in refresh_dashboard_stats: %s", e, exc_info=True)
+
+    # ------------------------------------------------------------------ #
     # Public API
     # ------------------------------------------------------------------ #
     def set_logged_in_user(self, user: UserAccount) -> None:
@@ -366,8 +408,10 @@ class MainView(QMainWindow):
         Store the authenticated user and update any user-related UI chrome.
         """
         self.current_user = user
+        self.sales_view.set_current_user(user)
         self.settings_view.set_current_user(user)
         self._apply_translations()
+        self.refresh_dashboard_stats()
 
     # ------------------------------------------------------------------ #
     # Slots
