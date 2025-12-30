@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 
 from qt_material import apply_stylesheet
 
+from app.config import CONFIG
 from app.controllers.auth_controller import AuthController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
@@ -122,11 +123,11 @@ class SettingsView(QWidget):
 
         layout.addStretch()
 
-        # Initial options
+        # Initial options (texts will be overridden by translations)
         self.cmbTheme.addItems(
             [
-                "Dark Teal",
-                "Light",
+                "Default (Dark)",
+                "Light Mode",
             ]
         )
         self.cmbTheme.setCurrentIndex(0)
@@ -194,7 +195,7 @@ class SettingsView(QWidget):
         self.cmbTheme.blockSignals(True)
         self.cmbTheme.clear()
         self.cmbTheme.addItem(
-            self._translator["settings.theme.option.dark_teal"], "dark"
+            self._translator["settings.theme.option.dark_teal"], "default"
         )
         self.cmbTheme.addItem(
             self._translator["settings.theme.option.light"], "light"
@@ -232,7 +233,19 @@ class SettingsView(QWidget):
         if theme_data == "light":
             apply_stylesheet(app, theme="light_blue.xml")
         else:
-            apply_stylesheet(app, theme="dark_teal.xml")
+            # Default dark: restore base stylesheet from main.qss
+            qss_text = ""
+            try:
+                qss_path = CONFIG.styles_path
+                if qss_path.is_file():
+                    with qss_path.open(encoding="utf-8") as fh:
+                        qss_text = fh.read()
+            except Exception:
+                qss_text = ""
+            app.setStyleSheet(qss_text)
+
+        # Re-apply font scale override on top of the theme
+        self._on_font_scale_changed(self.cmbFontScale.currentIndex())
 
     def _on_font_scale_changed(self, index: int) -> None:
         app = QApplication.instance()
@@ -250,6 +263,15 @@ class SettingsView(QWidget):
         font = app.font() if app.font() is not None else QFont()
         font.setPointSize(point_size)
         app.setFont(font)
+
+        # Force global font size via stylesheet override
+        base_qss = app.styleSheet() or ""
+        marker = "/* FONT_SCALE_OVERRIDE */"
+        if marker in base_qss:
+            base_qss = base_qss.split(marker)[0].rstrip()
+
+        override = f"\n{marker}\n* {{ font-size: {point_size}pt; }}\n"
+        app.setStyleSheet(base_qss + override)
 
     # ------------------------------------------------------------------ #
     # Slots

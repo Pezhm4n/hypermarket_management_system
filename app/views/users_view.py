@@ -3,13 +3,15 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from PyQt6 import uic
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QRegularExpression
+from PyQt6.QtGui import QRegularExpressionValidator
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -84,8 +86,20 @@ class UsersView(QWidget):
         if self.tblUsers.verticalHeader() is not None:
             self.tblUsers.verticalHeader().setVisible(False)
 
-        if self.tblUsers.horizontalHeader() is not None:
-            self.tblUsers.horizontalHeader().setStretchLastSection(True)
+        header = self.tblUsers.horizontalHeader()
+        if header is not None:
+            header.setStretchLastSection(False)
+            # Fixed small width for ID and Status
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(0, 60)
+            header.resizeSection(5, 60)
+            # Stretch important text columns
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Full Name
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Username
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # Mobile
+            # Role may size to contents
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
 
     def _connect_signals(self) -> None:
         self.txtSearchUser.textChanged.connect(self._on_search_changed)
@@ -100,7 +114,7 @@ class UsersView(QWidget):
         self.btnEditUser.setText(self._translator["users.button.edit"])
         self.btnDeleteUser.setText(self._translator["users.button.delete"])
         self.txtSearchUser.setPlaceholderText(
-            self._translator["inventory.search_placeholder"]
+            self._translator["users.search_placeholder"]
         )
         # Refresh headers to pick up translated text
         self._setup_table()
@@ -313,6 +327,13 @@ class UserDialog(QDialog):
         self.txtPassword.setEchoMode(QLineEdit.EchoMode.Password)
         self.cmbRole = QComboBox(self)
 
+        # Validators
+        mobile_regex = QRegularExpression(r"\\d{0,11}")
+        self.txtMobile.setValidator(QRegularExpressionValidator(mobile_regex, self))
+
+        username_regex = QRegularExpression(r"[A-Za-z0-9]{0,32}")
+        self.txtUsername.setValidator(QRegularExpressionValidator(username_regex, self))
+
         form_layout.addRow(
             self._translator["users.dialog.field.first_name"],
             self.txtFirstName,
@@ -362,14 +383,12 @@ class UserDialog(QDialog):
     def _apply_translations(self) -> None:
         self.setWindowTitle(self._translator["users.page_title"])
         if self._user_data is None:
-
-            self.lblTitle.setText("Add new user")
+            self.lblTitle.setText(self._translator["users.dialog.add_title"])
         else:
-            self.setWindowTitle(self._translator["sidebar.users"])
-            self.lblTitle.setText("Edit user")
+            self.lblTitle.setText(self._translator["users.dialog.edit_title"])
 
-        self.btnSave.setText("Save")
-        self.btnCancel.setText("Cancel")
+        self.btnSave.setText(self._translator["users.dialog.button.save"])
+        self.btnCancel.setText(self._translator["users.dialog.button.cancel"])
 
     # ------------------------------------------------------------------ #
     # Data binding
@@ -402,11 +421,40 @@ class UserDialog(QDialog):
         password = self.txtPassword.text()
         role_title = self.cmbRole.currentText().strip()
 
+        # Basic required fields
         if not first_name or not last_name or not mobile or not username or not role_title:
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                "Please fill in all required fields.",
+                self._translator["users.dialog.error.required_fields"],
+            )
+            return
+
+        # Validate first/last name are not purely numeric and not just spaces
+        if first_name.isdigit() or last_name.isdigit():
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                self._translator["users.dialog.error.required_fields"],
+            )
+            return
+
+        # Validate mobile length (10-11 digits)
+        if not (mobile.isdigit() and 10 <= len(mobile) <= 11):
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                self._translator["users.dialog.error.required_fields"],
+            )
+            return
+
+        # Username should be alphanumeric only (validator enforces during typing,
+        # this is a safety check)
+        if not username.isalnum():
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                self._translator["users.dialog.error.required_fields"],
             )
             return
 
@@ -415,7 +463,7 @@ class UserDialog(QDialog):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                "Password is required for new users.",
+                self._translator["users.dialog.error.password_required"],
             )
             return
 

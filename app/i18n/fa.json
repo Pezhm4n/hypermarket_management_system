@@ -77,8 +77,8 @@
 
   "settings.appearance.title": "نمای ظاهری",
   "settings.theme.label": "پوسته",
-  "settings.theme.option.dark_teal": "تیره (سایه آبی-سبز)",
-  "settings.theme.option.light": "روشن",
+  "settings.theme.option.dark_teal": "حالت پیش‌فرض (تیره)",
+  "settings.theme.option.light": "حالت روشن",
   "settings.font_scale.label": "اندازه قلم",
   "settings.font_scale.option.small": "کوچک",
   "settings.font_scale.option.medium": "متوسط",
@@ -97,6 +97,7 @@
   "users.button.add": "افزودن کاربر",
   "users.button.edit": "ویرایش",
   "users.button.delete": "حذف",
+  "users.search_placeholder": "جستجوی کاربر با نام یا نام کاربری...",
 
   "users.dialog.add_title": "افزودن کاربر جدید",
   "users.dialog.edit_title": "ویرایش کاربر",
