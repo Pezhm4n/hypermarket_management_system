@@ -11,10 +11,13 @@ from barcode.writer import ImageWriter
 from PIL import Image
 from pyzbar.pyzbar import decode as pyzbar_decode
 
-try:
-    from pylibdmtx.pylibdmtx import decode as decode_datamatrix
-except Exception:  # pragma: no cover - optional dependency
-    decode_datamatrix = None
+# zxingcpp is an optional dependency used for barcode decoding.
+# Ensure the name is always defined so checks like "if zxingcpp is None"
+# do not raise NameError when the import fails.
+try:  # pragma: no cover - optional dependency
+    import zxingcpp  # type: ignore[import]
+except Exception:  # pragma: no cover - missing zxing-cpp is acceptable
+    zxingcpp = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +76,28 @@ class BarcodeScanner:
     """
     Barcode decoding utilities based on OpenCV frames and static images.
 
-    Supports both 1D/QR barcodes (via pyzbar) and Data Matrix codes
-    (via pylibdmtx when available).
+    Triple-layer strategy for robustness in the Iranian market:
+
+      1) pyzbar      - fast for most 1D and QR barcodes
+      2) zxing-cpp   - robust engine for rotated/difficult codes, PDF417, ITF, etc.
+      3) pylibdmtx   - specialized for Data Matrix (e.g., pharmaceuticals)
+
+    All backends are optional; missing libraries are handled gracefully.
     """
 
+    # ------------------------------------------------------------------ #
+    # Public API
+    # ------------------------------------------------------------------ #
     def decode_frame(self, frame) -> Optional[str]:
         """
         Decode a barcode from an OpenCV frame (numpy array).
+
+        The method uses a triple-check strategy:
+        1) pyzbar       (grayscale)
+        2) zxing-cpp    (BGR frame)
+        3) pylibdmtx    (grayscale)
+
+        If nothing is found, it retries once on a 90-degree rotated frame.
 
         :param frame: BGR image as returned by ``cv2.VideoCapture.read()``.
         :return: Decoded barcode string, or ``None`` if nothing was found.
@@ -88,21 +106,29 @@ class BarcodeScanner:
             return None
 
         try:
-            # Prefer pyzbar on a grayscale view of the frame for robustness.
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            result = self._decode_with_pyzbar(gray)
+            # First pass: original orientation
+            result = self._decode_frame_with_engines(frame)
             if result:
                 return result
 
-            # Fallback: try Data Matrix decoding with pylibdmtx, if available.
-            return self._decode_with_datamatrix(gray)
+            # Optional rotation pass: some 1D barcodes are scanned vertically.
+            try:
+                rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            except Exception:
+                rotated = None
+
+            if rotated is not None:
+                return self._decode_frame_with_engines(rotated)
+
+            return None
         except Exception as exc:
             logger.exception("Error decoding barcode from frame: %s", exc)
             return None
 
     def decode_image(self, image_path: str) -> Optional[str]:
         """
-        Decode a barcode from a static image file.
+        Decode a barcode from a static image file using the same triple-check
+        strategy as decode_frame.
 
         :param image_path: Path to an image file.
         :return: Decoded barcode string, or ``None`` if nothing was found.
@@ -114,23 +140,104 @@ class BarcodeScanner:
 
             with Image.open(image_path) as img:
                 img = img.convert("RGB")
-                result = self._decode_with_pyzbar(img)
-                if result:
-                    return result
-
-                gray = img.convert("L")
-                result = self._decode_with_pyzbar(gray)
-                if result:
-                    return result
-
-            # Fallback to Data Matrix decoding using pylibdmtx if pyzbar failed.
-            with Image.open(image_path) as img2:
-                img2 = img2.convert("L")
-                return self._decode_with_datamatrix(img2)
+                return self._decode_image_with_engines(img)
         except Exception as exc:
             logger.exception("Error decoding barcode from image %r: %s", image_path, exc)
             return None
 
+    # ------------------------------------------------------------------ #
+    # Internal helpers for frames
+    # ------------------------------------------------------------------ #
+    def _decode_frame_with_engines(self, frame_bgr) -> Optional[str]:
+        """
+        Run all decoding backends for a single orientation of an OpenCV BGR frame.
+        """
+        gray = None
+
+        # Layer 1: pyzbar (grayscale)
+        try:
+            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        except Exception:
+            gray = None
+
+        if gray is not None:
+            result = self._decode_with_pyzbar(gray)
+            if result:
+                return result
+
+        # Layer 2: zxing-cpp (can work directly on numpy arrays)
+        result = self._decode_with_zxingcpp(frame_bgr)
+        if result:
+            return result
+
+        # Layer 3: pylibdmtx (Data Matrix) using grayscale
+        if gray is None:
+            try:
+                gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+            except Exception:
+                gray = None
+
+        if gray is not None:
+            return self._decode_with_datamatrix(gray)
+
+        return None
+
+    # ------------------------------------------------------------------ #
+    # Internal helpers for images (PIL)
+    # ------------------------------------------------------------------ #
+    def _decode_image_with_engines(self, pil_image: Image.Image) -> Optional[str]:
+        """
+        Triple-check decoding on a PIL RGB image.
+        """
+        # Prepare grayscale once
+        gray = pil_image.convert("L")
+
+        # Layer 1: pyzbar
+        result = self._decode_with_pyzbar(gray)
+        if result:
+            return result
+
+        # Layer 2: zxing-cpp (works with numpy arrays)
+        try:
+            import numpy as np  # lazy import to avoid hard dependency at module import time
+
+            bgr = cv2.cvtColor(
+                cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2BGR
+            )
+        except Exception:
+            bgr = None
+
+        if bgr is not None:
+            result = self._decode_with_zxingcpp(bgr)
+            if result:
+                return result
+
+        # Layer 3: pylibdmtx (Data Matrix)
+        result = self._decode_with_datamatrix(gray)
+        if result:
+            return result
+
+        # Optional rotation retry (90 degrees)
+        try:
+            rotated = pil_image.rotate(90, expand=True)
+        except Exception:
+            rotated = None
+
+        if rotated is not None:
+            gray_rot = rotated.convert("L")
+            result = self._decode_with_pyzbar(gray_rot)
+            if result:
+                return result
+
+            result = self._decode_with_datamatrix(gray_rot)
+            if result:
+                return result
+
+        return None
+
+    # ------------------------------------------------------------------ #
+    # Backend-specific helpers
+    # ------------------------------------------------------------------ #
     @staticmethod
     def _decode_with_pyzbar(image) -> Optional[str]:
         barcodes = pyzbar_decode(image)
@@ -154,7 +261,9 @@ class BarcodeScanner:
         Attempt to decode Data Matrix codes using pylibdmtx, if installed.
         Accepts either a PIL Image or a numpy array (OpenCV frame).
         """
-        if decode_datamatrix is None:
+        try:
+            from pylibdmtx.pylibdmtx import decode as decode_datamatrix  # type: ignore[import]
+        except Exception:
             return None
 
         try:
@@ -162,11 +271,16 @@ class BarcodeScanner:
                 pil_img = image.convert("L")
             else:
                 # Assume numpy array, convert BGR/gray to grayscale PIL image
-                if len(image.shape) == 3:
-                    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                import numpy as np  # lazy import
+
+                if isinstance(image, np.ndarray):
+                    if len(image.shape) == 3:
+                        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                    else:
+                        gray = image
+                    pil_img = Image.fromarray(gray)
                 else:
-                    gray = image
-                pil_img = Image.fromarray(gray)
+                    return None
 
             results = decode_datamatrix(pil_img)
         except Exception as exc:
@@ -183,6 +297,43 @@ class BarcodeScanner:
                 continue
             if data:
                 logger.debug("Decoded Data Matrix (pylibdmtx) data=%r", data)
+                return data
+
+        return None
+
+    @staticmethod
+    def _decode_with_zxingcpp(image) -> Optional[str]:
+        """
+        Decode using zxing-cpp, if installed.
+
+        Accepts either a numpy array (preferred, e.g., OpenCV frame) or
+        a PIL Image.
+        """
+        if zxingcpp is None:
+            return None
+
+        try:
+            # zxing-cpp Python binding can handle numpy arrays (BGR/GRAY/RGB)
+            # and some PIL images directly.
+            results = zxingcpp.read_barcodes(image)
+        except Exception as exc:
+            logger.exception("Error in zxingcpp.read_barcodes: %s", exc)
+            return None
+
+        if not results:
+            return None
+
+        for res in results:
+            try:
+                data = (res.text or "").strip()
+            except Exception:
+                continue
+            if data:
+                logger.debug(
+                    "Decoded barcode (zxing-cpp) format=%s data=%r",
+                    getattr(res, "format", "?"),
+                    data,
+                )
                 return data
 
         return None

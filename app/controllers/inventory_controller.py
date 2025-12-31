@@ -217,6 +217,27 @@ class InventoryController:
                 "unit": unit_value,
             }
 
+    def has_product_with_barcode(self, barcode: str) -> bool:
+        """
+        Return True if a product with the given barcode exists in the database.
+        The comparison uses a trimmed barcode to avoid issues with
+        accidental spaces stored in the database.
+        """
+        if not barcode:
+            return False
+
+        barcode = barcode.strip()
+        if not barcode:
+            return False
+
+        with self._get_session() as session:
+            result = (
+                session.query(Product.ProdID)
+                .filter(func.trim(Product.Barcode) == barcode)
+                .first()
+            )
+            return result is not None
+
     # CRUD operations
     def create_product(
         self,

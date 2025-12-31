@@ -10,7 +10,7 @@ import jdatetime
 
 logger = logging.getLogger(__name__)
 from PyQt6 import uic
-from PyQt6.QtCore import Qt, QRegularExpression, QDate, QUrl
+from PyQt6.QtCore import Qt, QRegularExpression, QDate, QUrl, QThread, pyqtSignal
 from PyQt6.QtGui import QRegularExpressionValidator, QColor, QBrush, QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QTableWidgetItem,
@@ -37,8 +38,90 @@ from PyQt6.QtWidgets import (
 
 from app.controllers.inventory_controller import InventoryController
 from app.core.barcode_manager import BarcodeGenerator
+from app.core.irancode_scraper import IranCodeScraper
 from app.core.translation_manager import TranslationManager
 from app.views.components.scanner_dialog import ScannerDialog
+
+
+class ProductLookupWorker(QThread):
+    """
+    Background worker that uses IranCodeScraper to query the official IranCode
+    registry for a given barcode and emits the result back to the UI thread.
+    """
+
+    finished = pyqtSignal(str, object)  # barcode, info dict or None
+    status_updated = pyqtSignal(str)  # human-readable status message
+
+    def __init__(
+        self,
+        barcode: str,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._barcode = barcode
+
+    def run(self) -> None:  # type: ignore[override]
+        info = None
+
+        def report_status(message: str) -> None:
+            # Emit status updates for any connected UI (e.g., progress dialog).
+            self.status_updated.emit(message)
+
+        try:
+            scraper = IranCodeScraper()
+            info = scraper.fetch(self._barcode, status_callback=report_status)
+        except Exception as exc:
+            logger.exception(
+                "Error in ProductLookupWorker (IranCode) for barcode %s: %s",
+                self._barcode,
+                exc,
+            )
+        # Emit even on failure so the dialog can clear its loading state.
+        self.finished.emit(self._barcode, info)
+
+
+class LookupProgressDialog(QDialog):
+    """
+    Modal dialog that shows progress and step-by-step status messages
+    during an IranCode product lookup.
+    """
+
+    def __init__(
+        self,
+        translator: TranslationManager,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+
+        self.setModal(True)
+        self.setMinimumWidth(360)
+        self.setWindowTitle(
+            self._translator.get(
+                "inventory.lookup.dialog.title",
+                "استعلام ایران‌کد",
+            )
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        self.lblStatus = QLabel(self)
+        self.lblStatus.setWordWrap(True)
+        layout.addWidget(self.lblStatus)
+
+        self.progress = QProgressBar(self)
+        # Indeterminate / busy indicator
+        self.progress.setRange(0, 0)
+        layout.addWidget(self.progress)
+
+    def update_status(self, message: str) -> None:
+        self.lblStatus.setText(message or "")
+
+    def on_lookup_finished(self, *args: object) -> None:
+        # Slot compatible with ProductLookupWorker.finished; simply closes dialog.
+        self.accept()
 
 
 class InventoryView(QWidget):
@@ -663,10 +746,27 @@ class ProductDialog(QDialog):
             except Exception:
                 self._product_id = None
 
+        # Helpers for optional IranCode-based product lookup when scanning a new product
+        self._lookup_thread: Optional[ProductLookupWorker] = None
+        self._original_name_placeholder: str = ""
+        self._name_lookup_in_progress: bool = False
+        self._last_lookup_manual: bool = False
+
         self._build_ui()
+
+        # Capture the initial placeholder text for the product name field so
+        # we can restore it after showing a temporary "searching..." message.
+        try:
+            self._original_name_placeholder = self.txtName.placeholderText()
+        except Exception:
+            self._original_name_placeholder = ""
+
         self._populate_categories()
         self._apply_translations()
         self._load_from_product()
+
+        # Placeholder for the lookup progress dialog (manual lookups)
+        self._lookup_dialog: Optional[LookupProgressDialog] = None
 
     def _build_ui(self) -> None:
         """
@@ -690,6 +790,7 @@ class ProductDialog(QDialog):
         )
 
         self.txtName = QLineEdit(self)
+        self.btnOnlineLookup = QPushButton(self)
         self.txtBarcode = QLineEdit(self)
         self.btnScanBarcode = QPushButton(self)
         self.cmbCategory = QComboBox(self)
@@ -699,6 +800,9 @@ class ProductDialog(QDialog):
         self.spinBasePrice.setDecimals(0)
         self.spinBasePrice.setGroupSeparatorShown(True)
         self.spinBasePrice.setSuffix(" ")
+
+        # Helper button to open Torob search for price lookup
+        self.btnPriceLookup = QPushButton(self)
 
         self.spinMinStock = QDoubleSpinBox(self)
         self.spinMinStock.setRange(0, 9999999999.0)
@@ -755,9 +859,28 @@ class ProductDialog(QDialog):
             QRegularExpressionValidator(barcode_regex, self)
         )
 
+        # Product name row with inline online lookup button
+        name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(4)
+        name_row.addWidget(self.txtName)
+
+        self.btnOnlineLookup.setText("🔍")
+        self.btnOnlineLookup.setFixedWidth(36)
+        self.btnOnlineLookup.setToolTip(
+            self._translator.get(
+                "inventory.dialog.button.lookup_online",
+                "Search product details online",
+            )
+        )
+        name_row.addWidget(self.btnOnlineLookup)
+
+        name_container = QWidget(self)
+        name_container.setLayout(name_row)
+
         form_layout.addRow(
             self._translator["inventory.dialog.field.name"],
-            self.txtName,
+            name_container,
         )
 
         # Barcode row with inline scan button
@@ -788,9 +911,28 @@ class ProductDialog(QDialog):
             self._translator["inventory.dialog.field.category"],
             self.cmbCategory,
         )
+        # Base price row with inline Torob search button
+        price_row = QHBoxLayout()
+        price_row.setContentsMargins(0, 0, 0, 0)
+        price_row.setSpacing(4)
+        price_row.addWidget(self.spinBasePrice)
+
+        self.btnPriceLookup.setText("🛒")
+        self.btnPriceLookup.setFixedWidth(36)
+        self.btnPriceLookup.setToolTip(
+            self._translator.get(
+                "inventory.dialog.button.lookup_price_torob",
+                "Open Torob search for price",
+            )
+        )
+        price_row.addWidget(self.btnPriceLookup)
+
+        price_container = QWidget(self)
+        price_container.setLayout(price_row)
+
         form_layout.addRow(
             self._translator["inventory.dialog.field.base_price"],
-            self.spinBasePrice,
+            price_container,
         )
         form_layout.addRow(
             self._translator["inventory.dialog.field.min_stock"],
@@ -841,6 +983,8 @@ class ProductDialog(QDialog):
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnCancel.clicked.connect(self.reject)
         self.btnScanBarcode.clicked.connect(self._on_scan_clicked)
+        self.btnOnlineLookup.clicked.connect(self._on_lookup_clicked)
+        self.btnPriceLookup.clicked.connect(self._on_price_lookup_clicked)
         self.chkPerishable.stateChanged.connect(self._on_perishable_changed)
 
     def _toggle_batch_fields(self, visible: bool) -> None:
@@ -851,6 +995,87 @@ class ProductDialog(QDialog):
         self.spinBuyPrice.setVisible(visible)
         self.lblExpiry.setVisible(visible)
         self.dateExpiry.setVisible(visible)
+
+    def _start_online_lookup_if_needed(self, barcode: str, manual: bool = False) -> None:
+        """
+        Start a background lookup to fetch a probable product name (and
+        optionally category) from online sources.
+
+        For automatic lookups (scanner), we first check whether the barcode
+        already exists locally and skip online requests when it does.
+
+        For manual lookups (triggered by the search button), we always allow
+        the online request, regardless of local existence or edit/add mode.
+        """
+        try:
+            code = (barcode or "").strip()
+            if not code:
+                return
+
+            # For automatic lookups (e.g., from scanner), only auto-fill
+            # information when creating a new product; editing an existing
+            # product should not suddenly overwrite its fields.
+            if not manual and self._is_edit_mode:
+                return
+
+            if not manual:
+                # Automatic lookup: respect local DB existence and avoid
+                # unnecessary web traffic.
+                try:
+                    exists = self._controller.has_product_with_barcode(code)
+                except Exception as exc:
+                    logger.exception(
+                        "Error checking local product existence for barcode %s: %s",
+                        code,
+                        exc,
+                    )
+                    # Fail-safe: if we cannot check the DB, avoid spamming web lookups.
+                    return
+
+                if exists:
+                    # Barcode is already registered locally; nothing to do.
+                    return
+
+            # Indicate to the user that a lookup is in progress, but only if
+            # they have not already typed a name manually.
+            try:
+                if not self._name_lookup_in_progress:
+                    self._name_lookup_in_progress = True
+                    if not self.txtName.text().strip():
+                        placeholder = self._translator.get(
+                            "inventory.dialog.placeholder.searching_name",
+                            "در حال جستجوی نام کالا...",
+                        )
+                        # Ensure we have the original placeholder stored
+                        if not self._original_name_placeholder:
+                            self._original_name_placeholder = (
+                                self.txtName.placeholderText() or ""
+                            )
+                        self.txtName.setPlaceholderText(placeholder)
+            except Exception:
+                # Placeholder UX is best-effort; never break lookup on UI errors.
+                pass
+
+            worker = ProductLookupWorker(
+                barcode=code,
+                parent=self
+            )
+            self._lookup_thread = worker
+
+            if manual:
+                # For manual lookups, the caller is responsible for wiring up
+                # status updates and the progress dialog. We only keep a
+                # reference to the worker here.
+                return
+
+            worker.finished.connect(self._on_product_lookup_finished)
+            worker.start()
+        except Exception as exc:
+            logger.exception(
+                "Error starting online product lookup for barcode %s: %s",
+                barcode,
+                exc,
+            )
 
     def _load_from_product(self) -> None:
         """
@@ -941,6 +1166,20 @@ class ProductDialog(QDialog):
                     "Scan barcode",
                 )
             )
+        if hasattr(self, "btnOnlineLookup"):
+            self.btnOnlineLookup.setToolTip(
+                self._translator.get(
+                    "inventory.dialog.button.lookup_online",
+                    "Search product details online",
+                )
+            )
+        if hasattr(self, "btnPriceLookup"):
+            self.btnPriceLookup.setToolTip(
+                self._translator.get(
+                    "inventory.dialog.button.lookup_price_torob",
+                    "Open Torob search for price",
+                )
+            )
 
     def _on_perishable_changed(self, state: int) -> None:
         """
@@ -955,6 +1194,112 @@ class ProductDialog(QDialog):
                 self.dateExpiry.setText(jalali_today.strftime("%Y/%m/%d"))
         else:
             self.dateExpiry.clear()
+
+    def _on_lookup_clicked(self) -> None:
+        """
+        Trigger a manual online lookup for the current barcode with
+        a modal progress dialog that shows step-by-step status updates.
+        """
+        try:
+            code = (self.txtBarcode.text() or "").strip()
+            if not code:
+                QMessageBox.warning(
+                    self,
+                    self._translator.get("dialog.warning_title", "Warning"),
+                    self._translator.get(
+                        "inventory.dialog.error.no_barcode_for_lookup",
+                        "Please enter a barcode before searching online.",
+                    ),
+                )
+                return
+
+            # Avoid starting multiple lookups in parallel.
+            if self._lookup_thread is not None and self._lookup_thread.isRunning():
+                QMessageBox.information(
+                    self,
+                    self._translator.get("dialog.info_title", "Information"),
+                    self._translator.get(
+                        "inventory.dialog.info.lookup_in_progress",
+                        "An online lookup is already in progress.",
+                    ),
+                )
+                return
+
+            # Run the common validation / placeholder logic, but in manual mode.
+            self._last_lookup_manual = True
+            self._start_online_lookup_if_needed(code, manual=True)
+
+            # If the lookup could not be started (e.g., barcode already exists),
+            # _lookup_thread will still be None.
+            if self._lookup_thread is None:
+                self._last_lookup_manual = False
+                return
+
+            dialog = LookupProgressDialog(translator=self._translator, parent=self)
+            self._lookup_dialog = dialog
+
+            # Wire status updates and completion to the dialog and handler.
+            self._lookup_thread.status_updated.connect(dialog.update_status)
+            self._lookup_thread.finished.connect(self._on_lookup_worker_finished)
+            self._lookup_thread.finished.connect(dialog.on_lookup_finished)
+
+            # Initial status text
+            dialog.update_status(
+                self._translator.get(
+                    "inventory.lookup.status.starting",
+                    "Starting online lookup...",
+                )
+            )
+
+            # Start the worker and show the modal dialog.
+            self._lookup_thread.start()
+            dialog.exec()
+        except Exception as exc:
+            logger.exception("Error in ProductDialog._on_lookup_clicked: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator.get("dialog.error_title", "Error"),
+                str(exc),
+            )
+
+    def _on_price_lookup_clicked(self) -> None:
+        """
+        Open a Torob search in the system browser to help the user
+        find a suitable price for the current product.
+        """
+        try:
+            name = (self.txtName.text() or "").strip()
+            barcode = (self.txtBarcode.text() or "").strip()
+
+            if not name and not barcode:
+                QMessageBox.information(
+                    self,
+                    self._translator.get("dialog.info_title", "Information"),
+                    self._translator.get(
+                        "inventory.dialog.info.no_term_for_price_lookup",
+                        "Please enter a product name or barcode before opening Torob.",
+                    ),
+                )
+                return
+
+            search_term = name or barcode
+            url = QUrl(f"https://torob.com/search/?q={search_term}")
+            if not QDesktopServices.openUrl(url):
+                QMessageBox.warning(
+                    self,
+                    self._translator.get("dialog.warning_title", "Warning"),
+                    self._translator.get(
+                        "inventory.dialog.error.torob_open_failed",
+                        "Could not open Torob in your default browser.",
+                    ),
+                )
+        except Exception as exc:
+            logger.exception("Error in ProductDialog._on_price_lookup_clicked: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator.get("dialog.error_title", "Error"),
+                str(exc),
+            )
 
     def _on_scan_clicked(self) -> None:
         """
@@ -973,13 +1318,139 @@ class ProductDialog(QDialog):
             )
 
     def _on_scanner_barcode_detected(self, code: str) -> None:
+        """
+        Handle barcode detected from the external scanner dialog.
+
+        The barcode field is filled automatically. The user can then
+        trigger an explicit online lookup using the search button next
+        to the product name field.
+        """
         try:
             if not code:
                 return
-            self.txtBarcode.setText(code)
+            cleaned = code.strip()
+            if not cleaned:
+                return
+            self.txtBarcode.setText(cleaned)
         except Exception as exc:
             logger.exception(
                 "Error in ProductDialog._on_scanner_barcode_detected: %s", exc
+            )
+
+    def _on_lookup_worker_finished(self, barcode: str, info: object) -> None:
+        """
+        Wrapper for ProductLookupWorker.finished used by manual lookups.
+
+        Closes the progress dialog (if any) and then applies the result
+        using the shared _on_product_lookup_finished logic.
+        """
+        try:
+            # Close progress dialog if it is open
+            lookup_dialog = getattr(self, "_lookup_dialog", None)
+            if lookup_dialog is not None:
+                try:
+                    lookup_dialog.accept()
+                except Exception:
+                    pass
+                self._lookup_dialog = None
+        except Exception:
+            # Even if closing the dialog fails, we still want to apply results.
+            pass
+
+        self._on_product_lookup_finished(barcode, info)
+
+    def _on_product_lookup_finished(self, barcode: str, info: object) -> None:
+        """
+        Handle completion of the background product lookup.
+
+        The result is only applied if the barcode in the dialog still
+        matches the looked-up barcode. Fetched values are allowed to
+        overwrite existing user input (e.g., product name) so that
+        authoritative data from IranCode takes precedence.
+        """
+        try:
+            # Drop reference to the finished worker
+            self._lookup_thread = None
+            self._name_lookup_in_progress = False
+
+            # Restore the original placeholder text on the name field
+            try:
+                self.txtName.setPlaceholderText(
+                    getattr(self, "_original_name_placeholder", "")
+                )
+            except Exception:
+                pass
+
+            current_barcode = (self.txtBarcode.text() or "").strip()
+            if not current_barcode or current_barcode != barcode:
+                # User changed the barcode while the lookup was running; ignore.
+                self._last_lookup_manual = False
+                return
+
+            if not isinstance(info, dict):
+                # Manual lookup with no structured info: inform the user.
+                if self._last_lookup_manual:
+                    try:
+                        QMessageBox.information(
+                            self,
+                            self._translator.get("dialog.info_title", "Information"),
+                            self._translator.get(
+                                "inventory.lookup.info.not_found",
+                                "No product information could be found online for this barcode. "
+                                "Please enter the product details manually.",
+                            ),
+                        )
+                    except Exception:
+                        pass
+                self._last_lookup_manual = False
+                return
+
+            name = str(info.get("name", "") or "").strip()
+            category = str(info.get("category", "") or "").strip()
+
+            # Always apply the fetched name so that IranCode can overwrite
+            # any previously typed value by the user.
+            name_applied = False
+            if name:
+                self.txtName.setText(name)
+                name_applied = True
+
+            # Apply category only if it already exists in the current combo box
+            # (case-insensitive match) and the user has not selected anything yet.
+            if category:
+                current_category = self.cmbCategory.currentText().strip()
+                if not current_category:
+                    target_lower = category.lower()
+                    index = -1
+                    for i in range(self.cmbCategory.count()):
+                        item_text = (self.cmbCategory.itemText(i) or "").strip()
+                        if item_text.lower() == target_lower:
+                            index = i
+                            break
+                    if index >= 0:
+                        self.cmbCategory.setCurrentIndex(index)
+
+            # If lookup was manual and we still could not apply a name, notify the user.
+            if self._last_lookup_manual and not name_applied:
+                try:
+                    QMessageBox.information(
+                        self,
+                        self._translator.get("dialog.info_title", "Information"),
+                        self._translator.get(
+                            "inventory.lookup.info.not_found",
+                            "No product information could be found online for this barcode. "
+                            "Please enter the product details manually.",
+                        ),
+                    )
+                except Exception:
+                    pass
+            self._last_lookup_manual = False
+        except Exception as exc:
+            self._last_lookup_manual = False
+            logger.exception(
+                "Error applying fetched product info for barcode %s: %s",
+                barcode,
+                exc,
             )
 
     def _on_save_clicked(self) -> None:

@@ -206,6 +206,26 @@ QTableWidget {
     selection-color: #020617;
 }
 
+/* Ensure table cells always use dark backgrounds (no white rows) */
+QTableView::item,
+QTableWidget::item {
+    background-color: #020617;
+    color: #f9fafb;
+}
+
+/* Optional alternate row color for better readability */
+QTableView::item:alternate,
+QTableWidget::item:alternate {
+    background-color: #111827;
+}
+
+/* Ensure selected rows remain readable in dark theme */
+QTableView::item:selected,
+QTableWidget::item:selected {
+    background-color: #0ea5e9;  /* Sky 500 */
+    color: #020617;             /* Very dark text for contrast */
+}
+
 /* =========================================================================
    Buttons (general)
    ========================================================================= */

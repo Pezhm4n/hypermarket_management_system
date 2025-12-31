@@ -13,3 +13,5 @@ python-barcode
 pyzbar
 opencv-python
 Pillow
+requests>=2.32.0
+beautifulsoup4>=4.12.0
