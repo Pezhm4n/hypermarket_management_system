@@ -145,6 +145,23 @@ class TranslationManager(QObject):
 
         return key
 
+    def get(self, key: str, default: str = "") -> str:
+        """
+        Safe lookup with a default, similar to dict.get().
+
+        Tries the active language first, then falls back to English.
+        If the key is still not found, returns ``default``.
+        """
+        current_map = self._translations.get(self._current_language, {})
+        if key in current_map:
+            return current_map[key]
+
+        en_map = self._translations.get("en", {})
+        if key in en_map:
+            return en_map[key]
+
+        return default
+
     def __getitem__(self, key: str) -> str:
         """
         Dictionary-style access to translations.

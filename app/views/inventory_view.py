@@ -3,16 +3,22 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
+import logging
+from datetime import date, timedelta, datetime
 import jdatetime
+
+logger = logging.getLogger(__name__)
 from PyQt6 import uic
-from PyQt6.QtCore import Qt, QRegularExpression
-from PyQt6.QtGui import QRegularExpressionValidator
+from PyQt6.QtCore import Qt, QRegularExpression, QDate
+from PyQt6.QtGui import QRegularExpressionValidator, QColor, QBrush
 from PyQt6.QtWidgets import (
     QApplication,
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDateEdit,
     QDialog,
+    QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
@@ -48,6 +54,7 @@ class InventoryView(QWidget):
 
         self._translator = translation_manager
         self._controller = InventoryController()
+        self._read_only: bool = False
 
         uic.loadUi("app/views/ui/inventory_view.ui", self)
 
@@ -122,15 +129,22 @@ class InventoryView(QWidget):
         )
         self._setup_table()
 
+    def refresh(self) -> None:
+        """
+        Public refresh method to reload products table.
+        """
+        try:
+            self._load_products()
+        except Exception as exc:
+            logger = logging.getLogger(__name__)
+            logger.error("Error refreshing InventoryView: %s", exc, exc_info=True)
+
     def _load_products(self) -> None:
         """
         Load products from the database and populate the table with visual alerts.
         Highlights:
         - Red background for low stock (TotalStock < MinStock)
         """
-        from datetime import date, timedelta
-        from PyQt6.QtGui import QColor, QBrush
-        
         search_text = self.txtSearchProduct.text().strip()
         products: List[Dict[str, Any]] = self._controller.list_products(
             search_text or None
@@ -140,7 +154,6 @@ class InventoryView(QWidget):
 
         today = date.today()
         warning_date = today + timedelta(days=10)
-
         for row_index, product in enumerate(products):
             self.tblProducts.insertRow(row_index)
 
@@ -150,9 +163,26 @@ class InventoryView(QWidget):
             category = product.get("category", "")
             base_price = product.get("base_price", Decimal("0"))
             total_stock = product.get("total_stock", Decimal("0"))
-            min_stock = product.get("min_stock", 0)
+            min_stock = product.get("min_stock", Decimal("0"))
+            next_expiry = product.get("next_expiry")
 
-            is_low_stock = float(total_stock) < min_stock
+            # Teammate's Logic for Highlighting
+            try:
+                is_low_stock = total_stock < min_stock
+            except Exception:
+                is_low_stock = False
+
+            is_near_expiry = False
+            if next_expiry is not None:
+                try:
+                    if isinstance(next_expiry, datetime):
+                        expiry_date = next_expiry.date()
+                    else:
+                        expiry_date = next_expiry
+                    if isinstance(expiry_date, date):
+                        is_near_expiry = expiry_date <= warning_date
+                except Exception:
+                    is_near_expiry = False
 
             id_item = QTableWidgetItem(str(prod_id))
             id_item.setData(Qt.ItemDataRole.UserRole, int(prod_id))
@@ -181,17 +211,23 @@ class InventoryView(QWidget):
                 Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
             )
 
+            highlight_brush = None
             if is_low_stock:
-                low_stock_color = QColor(255, 100, 100, 100)
-                low_stock_brush = QBrush(low_stock_color)
-                
-                id_item.setBackground(low_stock_brush)
-                name_item.setBackground(low_stock_brush)
-                barcode_item.setBackground(low_stock_brush)
-                category_item.setBackground(low_stock_brush)
-                base_price_item.setBackground(low_stock_brush)
-                total_stock_item.setBackground(low_stock_brush)
-                min_stock_item.setBackground(low_stock_brush)
+                low_stock_color = QColor(255, 100, 100, 100)  # Light Red
+                highlight_brush = QBrush(low_stock_color)
+            elif is_near_expiry:
+                warn_color = QColor(255, 255, 150, 120)  # Light Yellow
+                highlight_brush = QBrush(warn_color)
+
+            if highlight_brush is not None:
+                # Apply to all columns
+                id_item.setBackground(highlight_brush)
+                name_item.setBackground(highlight_brush)
+                barcode_item.setBackground(highlight_brush)
+                category_item.setBackground(highlight_brush)
+                base_price_item.setBackground(highlight_brush)
+                total_stock_item.setBackground(highlight_brush)
+                min_stock_item.setBackground(highlight_brush)
 
             self.tblProducts.setItem(row_index, 0, id_item)
             self.tblProducts.setItem(row_index, 1, name_item)
@@ -290,16 +326,23 @@ class InventoryView(QWidget):
             barcode = barcode_item.text().strip()
 
         menu = QMenu(self)
-        action_edit = menu.addAction(
-            self._translator["inventory.context.edit"]
-        )
-        action_delete = menu.addAction(
-            self._translator["inventory.context.delete"]
-        )
-        menu.addSeparator()
         action_copy = menu.addAction(
             self._translator["inventory.context.copy_barcode"]
         )
+
+        action_edit = None
+        action_delete = None
+        action_add_stock = None
+        if not self._read_only:
+            action_edit = menu.addAction(
+                self._translator["inventory.context.edit"]
+            )
+            action_delete = menu.addAction(
+                self._translator["inventory.context.delete"]
+            )
+            action_add_stock = menu.addAction(
+                self._translator["inventory.context.add_stock"]
+            )
 
         global_pos = self.tblProducts.viewport().mapToGlobal(pos)
         chosen_action = menu.exec(global_pos)
@@ -308,6 +351,8 @@ class InventoryView(QWidget):
             self._edit_product(prod_id)
         elif chosen_action == action_delete:
             self._delete_product(prod_id, name)
+        elif chosen_action == action_add_stock:
+            self._open_restock_dialog(prod_id, name)
         elif chosen_action == action_copy and barcode:
             clipboard = QApplication.clipboard()
             if clipboard is not None:
@@ -319,9 +364,6 @@ class InventoryView(QWidget):
             )
 
     def _edit_product(self, prod_id: int) -> None:
-        """
-        Open edit dialog for the selected product.
-        """
         product = self._controller.get_product(prod_id)
         if not product:
             QMessageBox.warning(
@@ -342,9 +384,9 @@ class InventoryView(QWidget):
             self._load_products()
 
     def _delete_product(self, prod_id: int, label: str) -> None:
-        """
-        Soft-delete the selected product after confirmation.
-        """
+        if self._read_only:
+            return
+
         if not label:
             label = str(prod_id)
 
@@ -372,11 +414,173 @@ class InventoryView(QWidget):
 
         self._load_products()
 
+    def set_read_only(self, readonly: bool) -> None:
+        """
+        Enable or disable read-only mode for inventory operations.
+        In read-only mode, Add/Edit/Delete operations are disabled.
+        """
+        self._read_only = bool(readonly)
+
+        self.btnAddProduct.setEnabled(not self._read_only)
+        self.btnAddProduct.setVisible(not self._read_only)
+
+        # Context menu reacts to _read_only; no further action needed here.
+
+    def _open_restock_dialog(self, prod_id: int, name: str) -> None:
+        try:
+            dialog = RestockDialog(
+                translator=self._translator,
+                product_label=name,
+                parent=self,
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            qty, buy_price, expiry_date = dialog.get_values()
+            self._controller.add_stock(
+                prod_id=prod_id,
+                initial_qty=qty,
+                buy_price=buy_price,
+                expiry_date=expiry_date,
+            )
+            self._load_products()
+        except Exception as exc:
+            logger.exception("Error in _open_restock_dialog: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                self._translator["inventory.dialog.error.operation_failed"].format(
+                    details=str(exc)
+                ),
+            )
+
+
+class RestockDialog(QDialog):
+    """
+    Dialog for adding stock (creating a new inventory batch) for a product.
+    """
+
+    def __init__(
+        self,
+        translator: TranslationManager,
+        product_label: str,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self._product_label = product_label
+        self._quantity = Decimal("0")
+        self._buy_price = Decimal("0")
+        self._expiry_date: Optional[date] = None
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        self.setModal(True)
+        self.setMinimumWidth(320)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel(self)
+        try:
+            caption = self._translator["inventory.dialog.restock_title"]
+        except Exception:
+            caption = "Add Stock"
+        title.setText(f"{caption} - {self._product_label}")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(8)
+
+        self.spinQuantity = QDoubleSpinBox(self)
+        self.spinQuantity.setRange(0.0, 9999999999.0)
+        self.spinQuantity.setDecimals(3)
+        self.spinQuantity.setGroupSeparatorShown(True)
+
+        self.spinBuyPrice = QDoubleSpinBox(self)
+        self.spinBuyPrice.setRange(0.0, 9999999999.0)
+        self.spinBuyPrice.setDecimals(0)
+        self.spinBuyPrice.setGroupSeparatorShown(True)
+        self.spinBuyPrice.setSuffix(" ")
+
+        self.dateExpiry = QDateEdit(self)
+        self.dateExpiry.setCalendarPopup(True)
+        today_qdate = QDate.currentDate()
+        self.dateExpiry.setDate(today_qdate)
+
+        form.addRow(
+            self._translator.get(
+                "inventory.restock.field.quantity", "Quantity / Amount"
+            ),
+            self.spinQuantity,
+        )
+        form.addRow(
+            self._translator.get(
+                "inventory.restock.field.buy_price", "Purchase Price"
+            ),
+            self.spinBuyPrice,
+        )
+        form.addRow(
+            self._translator.get(
+                "inventory.restock.field.expiry_date", "Expiry Date"
+            ),
+            self.dateExpiry,
+        )
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        layout.addWidget(buttons)
+
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+
+    def _on_accept(self) -> None:
+        try:
+            qty_val = self.spinQuantity.value()
+            buy_price_val = self.spinBuyPrice.value()
+            if qty_val <= 0:
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    self._translator.get(
+                        "inventory.dialog.error.invalid_quantity",
+                        "Quantity must be greater than zero.",
+                    ),
+                )
+                return
+            self._quantity = Decimal(str(qty_val))
+            self._buy_price = Decimal(str(buy_price_val))
+            qdate = self.dateExpiry.date()
+            try:
+                self._expiry_date = date(qdate.year(), qdate.month(), qdate.day())
+            except Exception:
+                self._expiry_date = None
+            self.accept()
+        except Exception as exc:
+            logger.exception("Error in RestockDialog._on_accept: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                self._translator["inventory.dialog.error.operation_failed"].format(
+                    details=str(exc)
+                ),
+            )
+
+    def get_values(self) -> tuple[Decimal, Decimal, Optional[date]]:
+        return self._quantity, self._buy_price, self._expiry_date
+
 
 class ProductDialog(QDialog):
     """
-    Dialog for creating or editing a product.
-    In edit mode, batch-related fields are hidden.
+    Dialog for creating or editing a product with initial inventory batch.
     """
 
     def __init__(
@@ -418,10 +622,10 @@ class ProductDialog(QDialog):
         self.lblTitle = QLabel(self)
         layout.addWidget(self.lblTitle)
 
-        self.form_layout = QFormLayout()
-        self.form_layout.setHorizontalSpacing(12)
-        self.form_layout.setVerticalSpacing(8)
-        self.form_layout.setFieldGrowthPolicy(
+        form_layout = QFormLayout()
+        form_layout.setHorizontalSpacing(12)
+        form_layout.setVerticalSpacing(8)
+        form_layout.setFieldGrowthPolicy(
             QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
         )
 
@@ -435,8 +639,10 @@ class ProductDialog(QDialog):
         self.spinBasePrice.setGroupSeparatorShown(True)
         self.spinBasePrice.setSuffix(" ")
 
-        self.spinMinStock = QSpinBox(self)
-        self.spinMinStock.setRange(0, 9999999)
+        self.spinMinStock = QDoubleSpinBox(self)
+        self.spinMinStock.setRange(0, 9999999999.0)
+        self.spinMinStock.setDecimals(3)
+        self.spinMinStock.setGroupSeparatorShown(True)
 
         self.chkPerishable = QCheckBox(self)
 
@@ -457,49 +663,87 @@ class ProductDialog(QDialog):
         self.dateExpiry.setText(jalali_today.strftime("%Y/%m/%d"))
         self.dateExpiry.setEnabled(False)
 
+        self.cmbUnit = QComboBox(self)
+        self.cmbUnit.addItem(
+            self._translator.get("unit.pcs", "Piece"),
+            "Pcs",
+        )
+        self.cmbUnit.addItem(
+            self._translator.get("unit.kg", "Kilogram"),
+            "Kg",
+        )
+        self.cmbUnit.addItem(
+            self._translator.get("unit.liter", "Liter"),
+            "Liter",
+        )
+        self.cmbUnit.addItem(
+            self._translator.get("unit.meter", "Meter"),
+            "Meter",
+        )
+        self.cmbUnit.addItem(
+            self._translator.get("unit.pack", "Pack"),
+            "Pack",
+        )
+
+        self.lblTotalStockDisplay = QLineEdit(self)
+        self.lblTotalStockDisplay.setReadOnly(True)
+        self.lblTotalStockDisplay.setEnabled(False)
+
         barcode_regex = QRegularExpression(r"[A-Za-z0-9]{0,50}")
         self.txtBarcode.setValidator(
             QRegularExpressionValidator(barcode_regex, self)
         )
 
-        self.form_layout.addRow(
+        form_layout.addRow(
             self._translator["inventory.dialog.field.name"],
             self.txtName,
         )
-        self.form_layout.addRow(
+        form_layout.addRow(
             self._translator["inventory.dialog.field.barcode"],
             self.txtBarcode,
         )
-        self.form_layout.addRow(
+        form_layout.addRow(
             self._translator["inventory.dialog.field.category"],
             self.cmbCategory,
         )
-        self.form_layout.addRow(
+        form_layout.addRow(
             self._translator["inventory.dialog.field.base_price"],
             self.spinBasePrice,
         )
-        self.form_layout.addRow(
+        form_layout.addRow(
             self._translator["inventory.dialog.field.min_stock"],
             self.spinMinStock,
         )
-        self.form_layout.addRow(
+        form_layout.addRow(
+            self._translator["inventory.dialog.field.unit"],
+            self.cmbUnit,
+        )
+        form_layout.addRow(
+            self._translator["inventory.dialog.field.current_stock"],
+            self.lblTotalStockDisplay,
+        )
+        form_layout.addRow(
             self._translator["inventory.dialog.field.is_perishable"],
             self.chkPerishable,
         )
-        
-        self.row_initial_qty = self.form_layout.rowCount()
-        self.lblInitialQty = QLabel(self._translator["inventory.dialog.field.initial_quantity"])
-        self.form_layout.addRow(self.lblInitialQty, self.spinInitialQty)
-        
-        self.row_buy_price = self.form_layout.rowCount()
-        self.lblBuyPrice = QLabel(self._translator["inventory.dialog.field.buy_price"])
-        self.form_layout.addRow(self.lblBuyPrice, self.spinBuyPrice)
-        
-        self.row_expiry = self.form_layout.rowCount()
-        self.lblExpiry = QLabel(self._translator["inventory.dialog.field.expiry_date"])
-        self.form_layout.addRow(self.lblExpiry, self.dateExpiry)
 
-        layout.addLayout(self.form_layout)
+        # Batch-related fields (only needed when creating a new product)
+        self.lblInitialQty = QLabel(
+            self._translator["inventory.dialog.field.initial_quantity"]
+        )
+        form_layout.addRow(self.lblInitialQty, self.spinInitialQty)
+
+        self.lblBuyPrice = QLabel(
+            self._translator["inventory.dialog.field.buy_price"]
+        )
+        form_layout.addRow(self.lblBuyPrice, self.spinBuyPrice)
+
+        self.lblExpiry = QLabel(
+            self._translator["inventory.dialog.field.expiry_date"]
+        )
+        form_layout.addRow(self.lblExpiry, self.dateExpiry)
+
+        layout.addLayout(form_layout)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -518,16 +762,11 @@ class ProductDialog(QDialog):
         self.chkPerishable.stateChanged.connect(self._on_perishable_changed)
 
     def _toggle_batch_fields(self, visible: bool) -> None:
-        """
-        Show or hide batch-related fields.
-        These fields are only needed when creating a new product.
-        """
+        """Show or hide batch-related fields."""
         self.lblInitialQty.setVisible(visible)
         self.spinInitialQty.setVisible(visible)
-        
         self.lblBuyPrice.setVisible(visible)
         self.spinBuyPrice.setVisible(visible)
-        
         self.lblExpiry.setVisible(visible)
         self.dateExpiry.setVisible(visible)
 
@@ -538,35 +777,61 @@ class ProductDialog(QDialog):
         if not self._is_edit_mode or not self._product_data:
             return
 
-        self._toggle_batch_fields(False)
+        self.blockSignals(True)
+        try:
+            # Hide batch fields in edit mode
+            self._toggle_batch_fields(False)
+            self.lblTitle.setText(self._translator["inventory.dialog.edit_title"])
 
-        self.lblTitle.setText(self._translator["inventory.dialog.edit_title"])
+            self.txtName.setText(self._product_data.get("name", ""))
+            self.txtBarcode.setText(self._product_data.get("barcode", ""))
 
-        self.txtName.setText(self._product_data.get("name", ""))
-        self.txtBarcode.setText(self._product_data.get("barcode", ""))
+            category = self._product_data.get("category", "")
+            if category:
+                index = self.cmbCategory.findText(category)
+                if index != -1:
+                    self.cmbCategory.setCurrentIndex(index)
 
-        category = self._product_data.get("category", "")
-        if category:
-            index = self.cmbCategory.findText(category)
-            if index != -1:
-                self.cmbCategory.setCurrentIndex(index)
+            base_price = self._product_data.get("base_price")
+            if base_price is not None:
+                try:
+                    self.spinBasePrice.setValue(float(base_price))
+                except Exception:
+                    pass
 
-        base_price = self._product_data.get("base_price")
-        if base_price is not None:
+            min_stock = self._product_data.get("min_stock")
+            if min_stock is not None:
+                try:
+                    self.spinMinStock.setValue(float(min_stock))
+                except Exception:
+                    pass
+
+            total_stock = self._product_data.get("total_stock")
+            if total_stock is not None:
+                try:
+                    self.lblTotalStockDisplay.setText(f"{float(total_stock):,.3f}")
+                except Exception:
+                    try:
+                        self.lblTotalStockDisplay.setText(str(total_stock))
+                    except Exception:
+                        self.lblTotalStockDisplay.clear()
+
+            unit_code = self._product_data.get("unit") or "Pcs"
             try:
-                self.spinBasePrice.setValue(float(base_price))
+                index = -1
+                for i in range(self.cmbUnit.count()):
+                    if self.cmbUnit.itemData(i) == unit_code:
+                        index = i
+                        break
+                if index >= 0:
+                    self.cmbUnit.setCurrentIndex(index)
             except Exception:
                 pass
 
-        min_stock = self._product_data.get("min_stock")
-        if min_stock is not None:
-            try:
-                self.spinMinStock.setValue(int(min_stock))
-            except Exception:
-                pass
-
-        is_perishable = bool(self._product_data.get("is_perishable"))
-        self.chkPerishable.setChecked(is_perishable)
+            is_perishable = bool(self._product_data.get("is_perishable"))
+            self.chkPerishable.setChecked(is_perishable)
+        finally:
+            self.blockSignals(False)
 
     def _populate_categories(self) -> None:
         """
@@ -604,13 +869,14 @@ class ProductDialog(QDialog):
 
     def _on_save_clicked(self) -> None:
         """
-        Validate input and save the product.
+        Validate input and create the product.
         """
         name = self.txtName.text().strip()
         barcode = self.txtBarcode.text().strip()
         category = self.cmbCategory.currentText().strip()
         base_price = self.spinBasePrice.value()
         min_stock = self.spinMinStock.value()
+        unit_code = self.cmbUnit.currentData() or "Pcs"
         is_perishable = self.chkPerishable.isChecked()
         initial_qty = self.spinInitialQty.value()
         buy_price = self.spinBuyPrice.value()
@@ -644,6 +910,7 @@ class ProductDialog(QDialog):
                     category_name=category,
                     base_price=base_price,
                     min_stock=min_stock,
+                    unit=unit_code,
                     is_perishable=is_perishable,
                 )
             else:
@@ -653,6 +920,7 @@ class ProductDialog(QDialog):
                     category_name=category,
                     base_price=base_price,
                     min_stock=min_stock,
+                    unit=unit_code,
                     is_perishable=is_perishable,
                     initial_quantity=initial_qty,
                     buy_price=buy_price,
@@ -662,6 +930,7 @@ class ProductDialog(QDialog):
             message = str(exc)
             if message == "INVALID_JALALI_DATE":
                 message = self._translator["inventory.dialog.error.invalid_date"]
+            logger.exception("Validation error while saving product: %s", exc)
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
@@ -669,10 +938,13 @@ class ProductDialog(QDialog):
             )
             return
         except Exception as exc:
+            logger.exception("Unexpected error while saving product: %s", exc)
             QMessageBox.critical(
                 self,
                 self._translator["dialog.error_title"],
-                str(exc),
+                self._translator["inventory.dialog.error.operation_failed"].format(
+                    details=str(exc)
+                ),
             )
             return
 

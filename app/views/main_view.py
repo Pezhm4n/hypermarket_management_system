@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Dict, Optional
+
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -10,11 +14,15 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
+
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 from app.controllers.auth_controller import AuthController
 from app.controllers.sales_controller import SalesController
@@ -26,6 +34,70 @@ from app.views.settings_view import SettingsView
 from app.views.users_view import UsersView
 
 logger = logging.getLogger(__name__)
+
+
+class MatplotlibWidget(QWidget):
+    """
+    Lightweight wrapper around a Matplotlib FigureCanvas for use in Qt layouts.
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        try:
+            self._figure = Figure(figsize=(5, 3))
+            self._canvas = FigureCanvas(self._figure)
+            self._axes = self._figure.add_subplot(111)
+
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(self._canvas)
+        except Exception as e:
+            logger.error("Error initializing MatplotlibWidget: %s", e, exc_info=True)
+
+    def _fix_text(self, text: str) -> str:
+        """
+        Prepare Arabic/Persian text for correct rendering in Matplotlib.
+        """
+        try:
+            if not text:
+                return ""
+            reshaped_text = arabic_reshaper.reshape(str(text))
+            return get_display(reshaped_text)
+        except Exception:
+            # Fallback to original text if reshaping fails for any reason
+            return str(text)
+
+    def plot_bar(self, labels: list[str], values: list[float], title: str) -> None:
+        """
+        Render a simple bar chart with the given labels and values.
+        """
+        try:
+            if not hasattr(self, "_axes"):
+                return
+
+            self._axes.clear()
+
+            display_labels: list[str] = []
+            plot_values: list[float] = []
+
+            if labels and values:
+                count = min(len(labels), len(values))
+                if count > 0:
+                    display_labels = [self._fix_text(str(label)) for label in labels[:count]]
+                    plot_values = list(values[:count])
+                    x_positions = list(range(count))
+                    self._axes.bar(x_positions, plot_values, color="#38bdf8")
+                    self._axes.set_xticks(x_positions)
+                    self._axes.set_xticklabels(display_labels)
+
+            self._axes.set_title(self._fix_text(title))
+            self._axes.set_ylabel(self._fix_text("Sales"))
+            self._axes.grid(axis="y", linestyle="--", alpha=0.3)
+
+            self._figure.tight_layout()
+            self._canvas.draw_idle()
+        except Exception as e:
+            logger.error("Error in MatplotlibWidget.plot_bar: %s", e, exc_info=True)
 
 
 class MainView(QMainWindow):
@@ -57,6 +129,7 @@ class MainView(QMainWindow):
         self.current_user: Optional[UserAccount] = None
 
         self._page_indices: Dict[str, int] = {}
+        self._current_page_key: str = "sales"
 
         # Ensure a professional default window size
         self.setMinimumSize(1280, 800)
@@ -67,7 +140,7 @@ class MainView(QMainWindow):
 
         self._translator.language_changed.connect(self._on_language_changed)
         self._apply_translations()
-        self.refresh_dashboard_stats()
+        self.refresh_dashboard()
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -199,16 +272,61 @@ class MainView(QMainWindow):
         """
         Instantiate module views and add them as pages in the stacked widget.
         """
-        # Dashboard page (simple stats placeholder)
+        # Dashboard page with KPI cards and sales chart
         dashboard_page = QWidget(self.stacked_widget)
         dashboard_layout = QVBoxLayout(dashboard_page)
         dashboard_layout.setContentsMargins(0, 0, 0, 0)
-        dashboard_layout.setSpacing(0)
+        dashboard_layout.setSpacing(16)
 
-        lbl_dashboard = QLabel(dashboard_page)
-        lbl_dashboard.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dashboard_layout.addWidget(lbl_dashboard)
-        self._dashboard_label = lbl_dashboard  # used for dashboard stats
+        # KPI row
+        kpi_layout = QHBoxLayout()
+        kpi_layout.setSpacing(16)
+
+        # Today's sales card
+        self._kpi_sales_frame = QFrame(dashboard_page)
+        self._kpi_sales_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        sales_layout = QVBoxLayout(self._kpi_sales_frame)
+        sales_layout.setContentsMargins(16, 12, 16, 12)
+        sales_layout.setSpacing(4)
+
+        self._kpi_sales_title = QLabel(self._kpi_sales_frame)
+        self._kpi_sales_value = QLabel(self._kpi_sales_frame)
+        self._kpi_sales_value.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._kpi_sales_value.setObjectName("KpiValueSales")
+
+        sales_layout.addWidget(self._kpi_sales_title)
+        sales_layout.addWidget(self._kpi_sales_value)
+
+        # Orders card
+        self._kpi_orders_frame = QFrame(dashboard_page)
+        self._kpi_orders_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        orders_layout = QVBoxLayout(self._kpi_orders_frame)
+        orders_layout.setContentsMargins(16, 12, 16, 12)
+        orders_layout.setSpacing(4)
+
+        self._kpi_orders_title = QLabel(self._kpi_orders_frame)
+        self._kpi_orders_value = QLabel(self._kpi_orders_frame)
+        self._kpi_orders_value.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._kpi_orders_value.setObjectName("KpiValueOrders")
+
+        orders_layout.addWidget(self._kpi_orders_title)
+        orders_layout.addWidget(self._kpi_orders_value)
+
+        kpi_layout.addWidget(self._kpi_sales_frame)
+        kpi_layout.addWidget(self._kpi_orders_frame)
+        kpi_layout.addStretch()
+
+        dashboard_layout.addLayout(kpi_layout)
+
+        # Sales chart
+        self._sales_chart_widget = MatplotlibWidget(dashboard_page)
+        dashboard_layout.addWidget(self._sales_chart_widget)
+
+        self._dashboard_page = dashboard_page
 
         # Sales / Inventory modules
         self.sales_view = SalesView(self._translator, parent=self.stacked_widget)
@@ -275,7 +393,7 @@ class MainView(QMainWindow):
     def _on_language_changed(self, language: str) -> None:
         _ = language
         self._apply_translations()
-        self.refresh_dashboard_stats()
+        self.refresh_dashboard()
 
     def _apply_translations(self) -> None:
         """
@@ -317,8 +435,17 @@ class MainView(QMainWindow):
             self.lblCurrentUser.setText("")
 
         # Static page labels
-        self._dashboard_label.setText(self._translator["main.section.dashboard"])
         self._reports_label.setText(self._translator["main.section.reports"])
+
+        # Dashboard KPI titles
+        if hasattr(self, "_kpi_sales_title"):
+            self._kpi_sales_title.setText(
+                self._translator["dashboard.kpi.today_sales"]
+            )
+        if hasattr(self, "_kpi_orders_title"):
+            self._kpi_orders_title.setText(
+                self._translator["dashboard.kpi.open_orders"]
+            )
 
         # Ensure language toggle reflects active language
         if self._translator.language == "fa":
@@ -353,7 +480,28 @@ class MainView(QMainWindow):
         self._update_header_for_page(page_key)
 
         if page_key == "dashboard":
-            self.refresh_dashboard_stats()
+            self.refresh_dashboard()
+        elif page_key == "sales":
+            try:
+                self.sales_view.ensure_active_shift()
+            except Exception as e:
+                logger.error(
+                    "Error ensuring active shift when switching to Sales page: %s",
+                    e,
+                    exc_info=True,
+                )
+        elif page_key == "inventory":
+            try:
+                if hasattr(self, "inventory_view") and hasattr(
+                    self.inventory_view, "refresh"
+                ):
+                    self.inventory_view.refresh()
+            except Exception as e:
+                logger.error(
+                    "Error refreshing InventoryView when switching page: %s",
+                    e,
+                    exc_info=True,
+                )
 
     def _update_header_for_page(self, page_key: str) -> None:
         section_keys = {
@@ -371,34 +519,59 @@ class MainView(QMainWindow):
     # ------------------------------------------------------------------ #
     # Dashboard stats
     # ------------------------------------------------------------------ #
-    def refresh_dashboard_stats(self) -> None:
+    def refresh_dashboard(self) -> None:
         """
-        Refresh top-level dashboard statistics (today's sales and invoices).
+        Refresh dashboard KPI cards and the 7-day sales chart.
         """
         try:
             stats = self._sales_controller.get_today_dashboard_stats()
             total_sales = stats.get("total_sales")
             invoice_count = stats.get("invoice_count")
 
-            if total_sales is None or invoice_count is None:
-                return
+            if total_sales is None:
+                total_sales = Decimal("0")
+            if invoice_count is None:
+                invoice_count = 0
 
             formatted_total = f"{float(total_sales):,.0f}"
-            title = self._translator["main.section.dashboard"]
 
-            self._dashboard_label.setText(
-                f"{title}\n\n"
-                f"Total Sales Today: {formatted_total}\n"
-                f"Invoices Today: {invoice_count}"
-            )
+            if hasattr(self, "_kpi_sales_value"):
+                self._kpi_sales_value.setText(formatted_total)
+            if hasattr(self, "_kpi_orders_value"):
+                self._kpi_orders_value.setText(str(int(invoice_count)))
+
+            series = self._sales_controller.get_last_7_days_sales_series()
+            labels = series.get("labels", [])
+            totals = series.get("totals", [])
+
+            numeric_totals: list[float] = []
+            for value in totals:
+                try:
+                    numeric_totals.append(float(value))
+                except Exception:
+                    numeric_totals.append(0.0)
+
+            if hasattr(self, "_sales_chart_widget"):
+                chart_title = self._translator["dashboard.chart_title"]
+                self._sales_chart_widget.plot_bar(
+                    labels,
+                    numeric_totals,
+                    chart_title,
+                )
 
             logger.info(
-                "Dashboard stats updated: total_sales=%s, invoice_count=%s",
+                "Dashboard refreshed: total_sales=%s, invoice_count=%s",
                 formatted_total,
                 invoice_count,
             )
         except Exception as e:
-            logger.error("Error in refresh_dashboard_stats: %s", e, exc_info=True)
+            logger.error("Error in refresh_dashboard: %s", e, exc_info=True)
+
+    def refresh_dashboard_stats(self) -> None:
+        """
+        Backwards-compatible wrapper for older callers.
+        """
+        self.refresh_dashboard()
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -410,8 +583,103 @@ class MainView(QMainWindow):
         self.current_user = user
         self.sales_view.set_current_user(user)
         self.settings_view.set_current_user(user)
+
+        # Role-based access control
+        role_title = getattr(user, "Role", None)
+        normalized_role = (role_title or "").strip().lower()
+        logger.info(
+            "Applying RBAC for user '%s' with role '%s'.",
+            user.Username,
+            role_title,
+        )
+
+        # Default: show all navigation
+        for _, btn in self._nav_buttons:
+            btn.setEnabled(True)
+            btn.setVisible(True)
+
+        # Users module is admin-only
+        if normalized_role != "admin":
+            self.btnUsers.setVisible(False)
+
+        # Role-specific visibility
+        if normalized_role == "cashier":
+            # Cashier: Dashboard + Sales + Inventory
+            for key, btn in self._nav_buttons:
+                if key not in {"dashboard", "sales", "inventory"}:
+                    btn.setVisible(False)
+                    btn.setEnabled(False)
+            # Inventory is read-only for cashiers
+            try:
+                if hasattr(self, "inventory_view") and hasattr(
+                    self.inventory_view, "set_read_only"
+                ):
+                    self.inventory_view.set_read_only(True)
+            except Exception as e:
+                logger.error("Error applying read-only mode for InventoryView: %s", e, exc_info=True)
+            self._switch_page("sales")
+        elif normalized_role == "warehouse":
+            # Warehouse: Inventory only
+            for key, btn in self._nav_buttons:
+                if key != "inventory":
+                    btn.setVisible(False)
+                    btn.setEnabled(False)
+            try:
+                if hasattr(self, "inventory_view") and hasattr(
+                    self.inventory_view, "set_read_only"
+                ):
+                    self.inventory_view.set_read_only(False)
+            except Exception as e:
+                logger.error("Error applying read/write mode for InventoryView: %s", e, exc_info=True)
+            self._switch_page("inventory")
+        else:
+            # Admin or unknown: full access; default to Sales
+            try:
+                if hasattr(self, "inventory_view") and hasattr(
+                    self.inventory_view, "set_read_only"
+                ):
+                    self.inventory_view.set_read_only(False)
+            except Exception as e:
+                logger.error("Error applying admin mode for InventoryView: %s", e, exc_info=True)
+            self._switch_page("sales")
+
         self._apply_translations()
-        self.refresh_dashboard_stats()
+        self.refresh_dashboard()
+
+    # ------------------------------------------------------------------ #
+    # Window / lifecycle
+    # ------------------------------------------------------------------ #
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        """
+        Intercept window close to optionally close an active shift.
+        """
+        try:
+            if hasattr(self, "sales_view") and getattr(
+                self.sales_view, "has_active_shift", None
+            ):
+                if self.sales_view.has_active_shift():
+                    reply = QMessageBox.question(
+                        self,
+                        self._translator["shift.close_confirm_title"],
+                        self._translator["shift.close_confirm_body"],
+                        QMessageBox.StandardButton.Yes
+                        | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if reply == QMessageBox.StandardButton.Yes:
+                        try:
+                            if getattr(self.sales_view, "close_shift", None):
+                                self.sales_view.close_shift()
+                        except Exception as inner_exc:
+                            logger.error(
+                                "Error while closing shift during app exit: %s",
+                                inner_exc,
+                                exc_info=True,
+                            )
+            event.accept()
+        except Exception as e:
+            logger.error("Error in MainView.closeEvent: %s", e, exc_info=True)
+            event.accept()
 
     # ------------------------------------------------------------------ #
     # Slots

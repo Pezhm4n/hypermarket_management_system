@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 import logging
 import re
 import jdatetime
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, case
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -108,7 +108,7 @@ class InventoryController:
         Return a list of products for display in the Inventory table.
 
         Each row contains:
-            prod_id, name, barcode, category, base_price, total_stock, min_stock
+            prod_id, name, barcode, category, base_price, total_stock, min_stock, next_expiry
         """
         with self._get_session() as session:
             query = (
@@ -123,6 +123,12 @@ class InventoryController:
                         func.sum(InventoryBatch.CurrentQuantity),
                         0,
                     ).label("TotalStock"),
+                    func.min(
+                        case(
+                            (InventoryBatch.CurrentQuantity > 0, InventoryBatch.ExpiryDate),
+                            else_=None,
+                        )
+                    ).label("NextExpiry"),
                 )
                 .join(Category, Product.CatID == Category.CatID)
                 .outerjoin(InventoryBatch, InventoryBatch.ProdID == Product.ProdID)
@@ -150,6 +156,12 @@ class InventoryController:
 
             results: List[Dict[str, Any]] = []
             for row in rows:
+                min_stock_value = (
+                    Decimal(str(row.MinStockLevel))
+                    if row.MinStockLevel is not None
+                    else Decimal("0")
+                )
+                next_expiry = getattr(row, "NextExpiry", None)
                 results.append(
                     {
                         "prod_id": row.ProdID,
@@ -158,7 +170,8 @@ class InventoryController:
                         "category": row.CategoryName,
                         "base_price": Decimal(str(row.BasePrice)) if row.BasePrice else Decimal("0"),
                         "total_stock": Decimal(str(row.TotalStock)),
-                        "min_stock": row.MinStockLevel or 0,
+                        "min_stock": min_stock_value,
+                        "next_expiry": next_expiry,
                     }
                 )
 
@@ -181,15 +194,27 @@ class InventoryController:
                 .scalar()
             )
 
+            try:
+                min_stock_value = (
+                    Decimal(str(product.MinStockLevel))
+                    if product.MinStockLevel is not None
+                    else Decimal("0")
+                )
+            except Exception:
+                min_stock_value = Decimal("0")
+
+            unit_value = product.Unit or "Pcs"
+
             return {
                 "prod_id": product.ProdID,
                 "name": product.Name,
                 "barcode": product.Barcode,
                 "category": category_name,
                 "base_price": Decimal(str(product.BasePrice)) if product.BasePrice else Decimal("0"),
-                "min_stock": product.MinStockLevel or 0,
+                "min_stock": min_stock_value,
                 "is_perishable": bool(product.IsPerishable),
                 "total_stock": Decimal(str(total_stock)),
+                "unit": unit_value,
             }
 
     # CRUD operations
@@ -199,7 +224,8 @@ class InventoryController:
         barcode: str,
         category_name: str,
         base_price: Any,
-        min_stock: int,
+        min_stock: Any,
+        unit: str,
         is_perishable: bool,
         initial_quantity: Any,
         buy_price: Any,
@@ -220,6 +246,8 @@ class InventoryController:
         base_price_dec = self._validate_price(base_price, "Base price")
         initial_qty_dec = self._validate_quantity(initial_quantity, "Initial quantity")
         buy_price_dec = self._validate_price(buy_price, "Purchase price")
+
+        unit_value = (unit or "Pcs").strip() or "Pcs"
 
         expiry_date_gregorian: Optional[date] = None
         if is_perishable:
@@ -254,6 +282,7 @@ class InventoryController:
                     MinStockLevel=min_stock,
                     IsPerishable=is_perishable,
                     IsActive=True,
+                    Unit=unit_value,
                     CatID=category.CatID,
                 )
                 session.add(product)
@@ -286,12 +315,16 @@ class InventoryController:
         barcode: str,
         category_name: str,
         base_price: Any,
-        min_stock: int,
+        min_stock: Any,
+        unit: str,
         is_perishable: bool,
-    ) -> None:
+    ) -> bool:
         """
         Update an existing Product's basic details.
         Note: This does not modify inventory batches.
+
+        Returns True on success, False on unexpected errors.
+        Validation errors are raised as ValueError.
         """
         name = name.strip()
         barcode = self._validate_barcode(barcode)
@@ -303,9 +336,10 @@ class InventoryController:
             raise ValueError("Category is required.")
 
         base_price_dec = self._validate_price(base_price, "Base price")
+        unit_value = (unit or "Pcs").strip() or "Pcs"
 
         with self._get_session() as session:
-            with session.begin():
+            try:
                 product: Optional[Product] = session.get(Product, prod_id)
                 if product is None:
                     raise ValueError("Product not found.")
@@ -328,7 +362,19 @@ class InventoryController:
                 product.BasePrice = base_price_dec
                 product.MinStockLevel = min_stock
                 product.IsPerishable = is_perishable
+                product.Unit = unit_value
                 product.CatID = category.CatID
+
+                session.add(product)
+                session.commit()
+                try:
+                    session.refresh(product)
+                except Exception:
+                    logger.debug(
+                        "Failed to refresh product after update (ProdID=%s).",
+                        prod_id,
+                        exc_info=True,
+                    )
 
                 logger.info(
                     "Updated product '%s' (Barcode=%s, ProdID=%s)",
@@ -336,6 +382,19 @@ class InventoryController:
                     barcode,
                     prod_id,
                 )
+                return True
+            except ValueError:
+                session.rollback()
+                raise
+            except Exception as exc:
+                session.rollback()
+                logger.error(
+                    "Unexpected error while updating product ProdID=%s: %s",
+                    prod_id,
+                    exc,
+                    exc_info=True,
+                )
+                return False
 
     def delete_product(self, prod_id: int) -> None:
         """
@@ -348,7 +407,9 @@ class InventoryController:
                 if product is None:
                     return
 
+                # Soft delete logic
                 product.IsActive = False
+                session.add(product)
 
                 logger.info(
                     "Soft-deleted product '%s' (Barcode=%s, ProdID=%s)",
@@ -356,3 +417,55 @@ class InventoryController:
                     product.Barcode,
                     prod_id,
                 )
+
+    def add_stock(
+        self,
+        prod_id: int,
+        initial_qty: Any,
+        buy_price: Any,
+        expiry_date: Optional[date],
+    ) -> bool:
+        """
+        Add stock for a product by creating a new InventoryBatch.
+
+        Does not modify the Product record directly.
+        """
+        qty_dec = self._validate_quantity(initial_qty, "Initial quantity")
+        buy_price_dec = self._validate_price(buy_price, "Purchase price")
+
+        with self._get_session() as session:
+            try:
+                product: Optional[Product] = session.get(Product, prod_id)
+                if product is None:
+                    raise ValueError("Product not found.")
+
+                batch = InventoryBatch(
+                    ProdID=prod_id,
+                    OriginalQuantity=qty_dec,
+                    CurrentQuantity=qty_dec,
+                    BuyPrice=buy_price_dec,
+                    ExpiryDate=expiry_date,
+                )
+                session.add(batch)
+                session.commit()
+
+                logger.info(
+                    "Added stock batch for ProdID=%s: qty=%s, buy_price=%s, expiry=%s",
+                    prod_id,
+                    qty_dec,
+                    buy_price_dec,
+                    expiry_date,
+                )
+                return True
+            except ValueError:
+                session.rollback()
+                raise
+            except Exception as exc:
+                session.rollback()
+                logger.error(
+                    "Unexpected error while adding stock for ProdID=%s: %s",
+                    prod_id,
+                    exc,
+                    exc_info=True,
+                )
+                return False

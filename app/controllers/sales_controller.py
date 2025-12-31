@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Callable, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
+import json
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models.models import (
+    Customer,
     InventoryBatch,
     Invoice,
     InvoiceItem,
+    ParkedOrder,
     Payment,
     Product,
     Shift,
@@ -182,6 +185,122 @@ class SalesController:
             raise
 
     # --------------------------------------------------------------------- #
+    # Parked orders (hold / recall)
+    # --------------------------------------------------------------------- #
+    def park_order(
+        self,
+        cart_items: Iterable[Mapping[str, Any]],
+        cust_id: Optional[int],
+    ) -> int:
+        """
+        Persist the current cart as a parked order and return the ParkID.
+        """
+        try:
+            items_list: list[dict] = [dict(item) for item in cart_items]
+            if not items_list:
+                raise ValueError("Cannot park an empty cart.")
+
+            payload = json.dumps(items_list, ensure_ascii=False, default=str)
+
+            with self._get_session() as session:
+                with session.begin():
+                    parked = ParkedOrder(
+                        CustID=cust_id,
+                        CartData=payload,
+                    )
+                    session.add(parked)
+                    session.flush()
+                    park_id = parked.ParkID
+
+            logger.info(
+                "Parked order created successfully: ParkID=%s, CustID=%s, items=%d",
+                park_id,
+                cust_id,
+                len(items_list),
+            )
+            return int(park_id)
+        except Exception as e:
+            logger.error("Error in park_order: %s", e, exc_info=True)
+            raise
+
+    def get_parked_orders(self) -> list[dict]:
+        """
+        Return a list of parked orders with basic metadata.
+        """
+        try:
+            results: list[dict] = []
+            with self._get_session() as session:
+                rows: Sequence[tuple[ParkedOrder, Optional[Customer]]] = (
+                    session.query(ParkedOrder, Customer)
+                    .outerjoin(Customer, ParkedOrder.CustID == Customer.CustID)
+                    .order_by(ParkedOrder.CreatedAt.desc())
+                    .all()
+                )
+
+                for parked, customer in rows:
+                    try:
+                        items = json.loads(parked.CartData or "[]")
+                    except Exception:
+                        items = []
+                    total = self.calculate_cart_total(items)
+                    cust_name = None
+                    if customer is not None:
+                        cust_name = customer.FullName or customer.Phone or None
+
+                    results.append(
+                        {
+                            "park_id": parked.ParkID,
+                            "created_at": parked.CreatedAt,
+                            "customer_id": parked.CustID,
+                            "customer_name": cust_name,
+                            "total": total,
+                        }
+                    )
+            return results
+        except Exception as e:
+            logger.error("Error in get_parked_orders: %s", e, exc_info=True)
+            raise
+
+    def restore_order(self, park_id: int) -> dict:
+        """
+        Load and delete a parked order, returning its cart and customer info.
+        """
+        try:
+            with self._get_session() as session:
+                with session.begin():
+                    parked: Optional[ParkedOrder] = session.get(ParkedOrder, park_id)
+                    if parked is None:
+                        raise ValueError("Parked order not found.")
+
+                    try:
+                        items = json.loads(parked.CartData or "[]")
+                    except Exception as exc:
+                        raise ValueError("Parked cart data is corrupted.") from exc
+
+                    customer: Optional[Customer] = None
+                    if parked.CustID is not None:
+                        customer = session.get(Customer, parked.CustID)
+
+                    cust_name = None
+                    if customer is not None:
+                        cust_name = customer.FullName or customer.Phone or None
+
+                    result = {
+                        "park_id": parked.ParkID,
+                        "customer_id": parked.CustID,
+                        "customer_name": cust_name,
+                        "items": items,
+                    }
+
+                    session.delete(parked)
+
+            logger.info("Restored parked order ParkID=%s", park_id)
+            return result
+        except Exception as e:
+            logger.error("Error in restore_order: %s", e, exc_info=True)
+            raise
+
+    # --------------------------------------------------------------------- #
     # Shift helpers (manual open/close)
     # --------------------------------------------------------------------- #
     def get_active_shift(self, emp_id: Optional[int]) -> Optional[int]:
@@ -279,6 +398,13 @@ class SalesController:
                 "shift_id": int,
                 "total_sales": Decimal,
                 "invoice_count": int,
+                "cash_float": Decimal,
+                "final_balance": Decimal,
+                "start_cash": Decimal,
+                "start_time": datetime | None,
+                "end_time": datetime | None,
+                "employee_name": str | None,
+                "items": list[dict],
             }
         """
         try:
@@ -319,12 +445,76 @@ class SalesController:
                         if shift.StartCash is not None
                         else Decimal("0")
                     )
-                    shift.SystemCalculatedCash = (start_cash + total_sales).quantize(
+                    cash_float = (
+                        Decimal(str(shift.CashFloat))
+                        if getattr(shift, "CashFloat", None) is not None
+                        else Decimal("0")
+                    )
+
+                    final_balance = (start_cash + total_sales).quantize(
                         Decimal("0.01"),
                         rounding=ROUND_HALF_UP,
                     )
-                    shift.EndTime = func.now()
+
+                    shift.SystemCalculatedCash = final_balance
+                    closed_at = datetime.utcnow()
+                    shift.EndTime = closed_at
                     shift.Status = "Closed"
+
+                    # Aggregate sold items for this shift grouped by product
+                    item_rows = (
+                        session.query(
+                            Product.Name,
+                            func.coalesce(
+                                func.sum(InvoiceItem.Quantity),
+                                0,
+                            ).label("qty"),
+                            func.coalesce(
+                                func.sum(InvoiceItem.LineTotal),
+                                0,
+                            ).label("total"),
+                        )
+                        .join(
+                            InvoiceItem,
+                            InvoiceItem.ProdID == Product.ProdID,
+                        )
+                        .join(
+                            Invoice,
+                            Invoice.InvID == InvoiceItem.InvID,
+                        )
+                        .filter(
+                            Invoice.ShiftID == shift_id,
+                            Invoice.Status != "Void",
+                        )
+                        .group_by(Product.Name)
+                        .order_by(Product.Name.asc())
+                        .all()
+                    )
+
+                    items: list[dict] = []
+                    for name, qty_raw, total_raw in item_rows:
+                        qty_dec = Decimal(str(qty_raw or 0)).quantize(
+                            Decimal("0.01"),
+                            rounding=ROUND_HALF_UP,
+                        )
+                        total_dec = Decimal(str(total_raw or 0)).quantize(
+                            Decimal("0.01"),
+                            rounding=ROUND_HALF_UP,
+                        )
+                        items.append(
+                            {
+                                "name": name,
+                                "quantity": qty_dec,
+                                "total": total_dec,
+                            }
+                        )
+
+                    employee_name: str | None = None
+                    if getattr(shift, "employee", None) is not None:
+                        first = getattr(shift.employee, "FirstName", "") or ""
+                        last = getattr(shift.employee, "LastName", "") or ""
+                        full_name = f"{first} {last}".strip()
+                        employee_name = full_name or None
 
                     logger.info(
                         "Shift %s closed. Total sales=%s, invoice_count=%s.",
@@ -337,6 +527,13 @@ class SalesController:
                         "shift_id": shift_id,
                         "total_sales": total_sales,
                         "invoice_count": invoice_count_int,
+                        "cash_float": cash_float,
+                        "final_balance": final_balance,
+                        "start_cash": start_cash,
+                        "start_time": shift.StartTime,
+                        "end_time": shift.EndTime,
+                        "employee_name": employee_name,
+                        "items": items,
                     }
         except Exception as e:
             logger.error("Error in close_shift: %s", e, exc_info=True)
@@ -373,15 +570,19 @@ class SalesController:
         cart_items: Iterable[Mapping[str, Any]],
         total_amount: Any,
         payment_method: str = "Cash",
+        cust_id: Optional[int] = None,
+        is_refund: bool = False,
+        discount_amount: Any = 0,
     ) -> bool:
         """
         Perform a complete checkout operation in a single DB transaction.
 
         Steps:
             * Validate input and recompute cart total.
-            * Create Invoice (Status='Paid').
-            * Deduct inventory using FIFO (ExpiryDate ascending) per product.
-            * Create one or more InvoiceItem rows per product/batch.
+            * Apply discount to compute final total.
+            * Create Invoice (Status='Paid' or 'Refund').
+            * Deduct or add inventory depending on transaction type.
+            * Create InvoiceItem rows per product/batch.
             * Create a Payment row linked to the Invoice.
 
         Raises ValueError for business-rule violations (e.g. insufficient stock
@@ -393,16 +594,40 @@ class SalesController:
                 raise ValueError("Cart is empty.")
 
             logger.info(
-                "Starting checkout: shift_id=%s, items=%d, payment_method=%s",
+                "Starting checkout: shift_id=%s, items=%d, payment_method=%s, is_refund=%s, discount=%s",
                 shift_id,
                 len(cart_items_list),
                 payment_method,
+                is_refund,
+                discount_amount,
             )
 
-            computed_total = self.calculate_cart_total(cart_items_list)
+            # Subtotal from cart
+            subtotal = self.calculate_cart_total(cart_items_list)
+            if is_refund and subtotal > 0:
+                subtotal = -subtotal
+
+            try:
+                discount_dec = Decimal(str(discount_amount or 0)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            except Exception:
+                discount_dec = Decimal("0.00")
+
+            if discount_dec < 0:
+                discount_dec = Decimal("0.00")
+
+            final_total = (subtotal - discount_dec).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            if is_refund and final_total > 0:
+                final_total = -final_total
 
             # total_amount is accepted but not trusted blindly; we base persistence
-            # on the computed total.
+            # on the calculated final total.
             _ = total_amount  # kept for signature compatibility
 
             with self._get_session() as session:
@@ -419,9 +644,10 @@ class SalesController:
                     # Create invoice
                     invoice = Invoice(
                         ShiftID=shift_id,
-                        CustID=None,
-                        TotalAmount=computed_total,
-                        Status="Paid",
+                        CustID=cust_id,
+                        TotalAmount=final_total,
+                        Discount=discount_dec,
+                        Status="Refund" if is_refund else "Paid",
                     )
                     session.add(invoice)
                     session.flush()  # Ensure InvID is available
@@ -432,57 +658,102 @@ class SalesController:
                         qty = Decimal(str(item["Quantity"]))
                         unit_price = Decimal(str(item["UnitPrice"]))
 
-                        if qty <= 0:
+                        if qty == 0:
                             logger.info(
-                                "Skipping cart line with non-positive quantity: ProdID=%s, Qty=%s",
+                                "Skipping cart line with zero quantity: ProdID=%s",
                                 prod_id,
-                                qty,
                             )
                             continue
 
-                        # Lock relevant inventory rows (FIFO / FEFO by ExpiryDate)
-                        batches = (
-                            session.query(InventoryBatch)
-                            .filter(
-                                InventoryBatch.ProdID == prod_id,
-                                InventoryBatch.CurrentQuantity > 0,
-                            )
-                            .order_by(
-                                InventoryBatch.ExpiryDate.asc(),
-                                InventoryBatch.BatchID.asc(),
-                            )
-                            .with_for_update()
-                            .all()
-                        )
+                        if not is_refund:
+                            if qty < 0:
+                                raise ValueError(
+                                    f"Negative quantity is not allowed for normal sale. ProdID={prod_id}, Qty={qty}"
+                                )
 
-                        available = sum(
-                            (Decimal(str(b.CurrentQuantity)) for b in batches),
-                            Decimal("0"),
-                        )
-
-                        if available < qty:
-                            raise ValueError(
-                                f"Insufficient stock for product ID {prod_id}. "
-                                f"Requested {qty}, available {available}."
+                            # Lock relevant inventory rows (FIFO / FEFO by ExpiryDate)
+                            batches = (
+                                session.query(InventoryBatch)
+                                .filter(
+                                    InventoryBatch.ProdID == prod_id,
+                                    InventoryBatch.CurrentQuantity > 0,
+                                )
+                                .order_by(
+                                    InventoryBatch.ExpiryDate.asc(),
+                                    InventoryBatch.BatchID.asc(),
+                                )
+                                .with_for_update()
+                                .all()
                             )
 
-                        remaining = qty
+                            available = sum(
+                                (Decimal(str(b.CurrentQuantity)) for b in batches),
+                                Decimal("0"),
+                            )
 
-                        for batch in batches:
-                            if remaining <= 0:
-                                break
+                            if available < qty:
+                                raise ValueError(
+                                    f"Insufficient stock for product ID {prod_id}. "
+                                    f"Requested {qty}, available {available}."
+                                )
 
-                            batch_qty = Decimal(str(batch.CurrentQuantity))
-                            if batch_qty <= 0:
+                            remaining = qty
+
+                            for batch in batches:
+                                if remaining <= 0:
+                                    break
+
+                                batch_qty = Decimal(str(batch.CurrentQuantity))
+                                if batch_qty <= 0:
+                                    continue
+
+                                use_qty = min(batch_qty, remaining)
+                                new_qty = batch_qty - use_qty
+
+                                batch.CurrentQuantity = new_qty
+                                remaining -= use_qty
+
+                                line_total = (use_qty * unit_price).quantize(
+                                    Decimal("0.01"),
+                                    rounding=ROUND_HALF_UP,
+                                )
+
+                                invoice_item = InvoiceItem(
+                                    InvID=invoice.InvID,
+                                    ProdID=prod_id,
+                                    BatchID=batch.BatchID,
+                                    Quantity=use_qty,
+                                    UnitPrice=unit_price,
+                                    Discount=Decimal("0"),
+                                    TaxAmount=Decimal("0"),
+                                    LineTotal=line_total,
+                                )
+                                session.add(invoice_item)
+
+                            if remaining > 0:
+                                # Should not occur due to pre-check, but kept as a guard.
+                                raise ValueError(
+                                    f"Unable to allocate full quantity for product ID {prod_id}."
+                                )
+                        else:
+                            # Refund: increase stock by the absolute quantity and create negative invoice items.
+                            qty_abs = abs(qty)
+                            if qty_abs <= 0:
                                 continue
 
-                            use_qty = min(batch_qty, remaining)
-                            new_qty = batch_qty - use_qty
+                            # Create a new batch representing returned goods.
+                            batch = InventoryBatch(
+                                ProdID=prod_id,
+                                OriginalQuantity=qty_abs,
+                                CurrentQuantity=qty_abs,
+                                BuyPrice=unit_price,
+                                EntryDate=datetime.utcnow(),
+                            )
+                            session.add(batch)
+                            session.flush()
 
-                            batch.CurrentQuantity = new_qty
-                            remaining -= use_qty
-
-                            line_total = (use_qty * unit_price).quantize(
+                            refund_qty = -qty_abs
+                            line_total = (refund_qty * unit_price).quantize(
                                 Decimal("0.01"),
                                 rounding=ROUND_HALF_UP,
                             )
@@ -491,7 +762,7 @@ class SalesController:
                                 InvID=invoice.InvID,
                                 ProdID=prod_id,
                                 BatchID=batch.BatchID,
-                                Quantity=use_qty,
+                                Quantity=refund_qty,
                                 UnitPrice=unit_price,
                                 Discount=Decimal("0"),
                                 TaxAmount=Decimal("0"),
@@ -499,25 +770,20 @@ class SalesController:
                             )
                             session.add(invoice_item)
 
-                        if remaining > 0:
-                            # Should not occur due to pre-check, but kept as a guard.
-                            raise ValueError(
-                                f"Unable to allocate full quantity for product ID {prod_id}."
-                            )
-
-                    # Record payment
+                    # Record payment (negative for refunds)
                     payment = Payment(
                         InvID=invoice.InvID,
-                        Amount=computed_total,
+                        Amount=final_total,
                         Method=payment_method,
                         TransactionRef=None,
                     )
                     session.add(payment)
 
             logger.info(
-                "Checkout completed successfully for shift_id=%s, total=%s",
+                "Checkout completed successfully for shift_id=%s, total=%s, discount=%s",
                 shift_id,
-                computed_total,
+                final_total,
+                discount_dec,
             )
             # If we reach here without exception, the transaction was committed.
             return True
@@ -573,4 +839,73 @@ class SalesController:
                 }
         except Exception as e:
             logger.error("Error in get_today_dashboard_stats: %s", e, exc_info=True)
+            raise
+
+    def get_last_7_days_sales_series(self) -> dict:
+        """
+        Return per-day sales totals for the last 7 days (including today).
+
+        Returns
+        -------
+        dict
+            {
+                "labels": [str],   # ISO-formatted dates YYYY-MM-DD
+                "totals": [Decimal],
+            }
+        """
+        try:
+            today = date.today()
+            start_date = today - timedelta(days=6)
+            logger.info(
+                "Calculating 7-day sales series from %s to %s.",
+                start_date,
+                today,
+            )
+
+            with self._get_session() as session:
+                rows = (
+                    session.query(
+                        func.date(Invoice.Date).label("day"),
+                        func.coalesce(func.sum(Invoice.TotalAmount), 0).label("total"),
+                    )
+                    .filter(
+                        Invoice.Date >= start_date,
+                        Invoice.Status != "Void",
+                    )
+                    .group_by("day")
+                    .order_by("day")
+                    .all()
+                )
+
+                totals_by_day: dict[date, Decimal] = {}
+                for day_raw, total_raw in rows:
+                    day_value = day_raw
+                    total_dec = Decimal(str(total_raw or 0)).quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                    totals_by_day[day_value] = total_dec
+
+                labels: list[str] = []
+                totals: list[Decimal] = []
+
+                for offset in range(6, -1, -1):
+                    day_value = today - timedelta(days=offset)
+                    labels.append(day_value.strftime("%Y-%m-%d"))
+                    totals.append(totals_by_day.get(day_value, Decimal("0")))
+
+                logger.info(
+                    "7-day sales series prepared: %s",
+                    list(zip(labels, totals)),
+                )
+                return {
+                    "labels": labels,
+                    "totals": totals,
+                }
+        except Exception as e:
+            logger.error(
+                "Error in get_last_7_days_sales_series: %s",
+                e,
+                exc_info=True,
+            )
             raise

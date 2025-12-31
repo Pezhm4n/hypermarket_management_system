@@ -8,7 +8,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models.models import Employee, UserAccount
+from app.models.models import Employee, Role, UserAccount, UserRole
 
 SessionFactory = Callable[[], Session]
 TUserAccount = TypeVar("TUserAccount", bound=UserAccount)
@@ -119,6 +119,31 @@ class AuthController:
             user.LockoutUntil = None
             session.add(user)
             session.commit()
+
+            # Resolve primary role title for RBAC and attach as transient attribute.
+            try:
+                role_title: Optional[str] = None
+                user_role = (
+                    session.query(UserRole)
+                    .filter(UserRole.UserID == user.UserID)
+                    .join(Role, UserRole.RoleID == Role.RoleID)
+                    .order_by(UserRole.AssignedDate.asc())
+                    .first()
+                )
+                if user_role is not None and getattr(user_role, "role", None) is not None:
+                    role_title = user_role.role.Title
+                # Fallback for legacy data: treat 'admin' username as Admin.
+                if role_title is None and user.Username.lower() == "admin":
+                    role_title = "Admin"
+                setattr(user, "Role", role_title)
+            except Exception as role_exc:
+                logger.error(
+                    "Failed to resolve role for user '%s': %s",
+                    username,
+                    role_exc,
+                    exc_info=True,
+                )
+                setattr(user, "Role", None)
 
             logger.info("User '%s' logged in successfully.", username)
             return user

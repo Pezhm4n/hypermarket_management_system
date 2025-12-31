@@ -1,20 +1,35 @@
-from __future__ import annotations
+
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
 
 from PyQt6 import uic
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QPoint, QMarginsF
+from PyQt6.QtGui import (
+    QDoubleValidator,
+    QKeySequence,
+    QShortcut,
+    QTextDocument,
+    QPageLayout,
+)
+from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QMenu,
     QPushButton,
+    QSpinBox,
+    QDoubleSpinBox,
+    QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -23,8 +38,119 @@ from PyQt6.QtWidgets import (
 from app.controllers.sales_controller import SalesController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
+from app.views.customers_view import CustomersDialog
 
 logger = logging.getLogger(__name__)
+
+
+class StartShiftDialog(QDialog):
+    """
+    Dialog for starting a new shift with an initial cash float.
+
+    The dialog is fully localized using TranslationManager and performs
+    basic validation on the entered cash amount.
+    """
+
+    def __init__(
+        self,
+        translation_manager: TranslationManager,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translation_manager
+        self._cash_float = Decimal("0")
+        try:
+            self._build_ui()
+        except Exception as e:
+            logger.error("Error initializing StartShiftDialog: %s", e, exc_info=True)
+
+    def _build_ui(self) -> None:
+        try:
+            self.setWindowTitle(self._translator["shift.start_title"])
+
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(16, 16, 16, 16)
+            layout.setSpacing(12)
+
+            description = QLabel(self._translator["shift.start_message"], self)
+            description.setWordWrap(True)
+            layout.addWidget(description)
+
+            form_layout = QFormLayout()
+            form_layout.setContentsMargins(0, 0, 0, 0)
+            form_layout.setSpacing(8)
+
+            self.txt_cash_float = QLineEdit(self)
+            self.txt_cash_float.setText("0")
+            # Apply numeric validator to prevent non-numeric input
+            validator = QDoubleValidator(self)
+            validator.setBottom(0.0)
+            self.txt_cash_float.setValidator(validator)
+            try:
+                self.txt_cash_float.setPlaceholderText(
+                    self._translator["shift.cash_float_placeholder"]
+                )
+            except Exception:
+                # If translation key is missing, ignore placeholder configuration.
+                pass
+
+            form_layout.addRow(
+                self._translator["shift.cash_float_label"],
+                self.txt_cash_float,
+            )
+            layout.addLayout(form_layout)
+
+            button_box = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok
+                | QDialogButtonBox.StandardButton.Cancel,
+                parent=self,
+            )
+            layout.addWidget(button_box)
+
+            button_box.accepted.connect(self._on_accept)
+            button_box.rejected.connect(self.reject)
+        except Exception as e:
+            logger.error("Error building StartShiftDialog UI: %s", e, exc_info=True)
+
+    def _on_accept(self) -> None:
+        try:
+            raw = (self.txt_cash_float.text() or "").strip()
+            if not raw:
+                raw = "0"
+            try:
+                amount = Decimal(raw)
+            except Exception:
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    self._translator["shift.error.invalid_amount"],
+                )
+                return
+
+            if amount < 0:
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    self._translator["shift.error.negative_amount"],
+                )
+                return
+
+            self._cash_float = amount.quantize(Decimal("0.01"))
+            self.accept()
+        except Exception as e:
+            logger.error(
+                "Error validating cash float in StartShiftDialog: %s",
+                e,
+                exc_info=True,
+            )
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                self._translator["shift.error.invalid_amount"],
+            )
+
+    def cash_float(self) -> Decimal:
+        return self._cash_float
 
 
 class SalesView(QWidget):
@@ -47,10 +173,20 @@ class SalesView(QWidget):
         self._controller = SalesController()
         self._current_user: Optional[UserAccount] = None
         self._active_shift_id: Optional[int] = None
+        self._selected_customer_id: Optional[int] = None
+        self._selected_customer_name: str = ""
+        self._return_mode: bool = False
 
         uic.loadUi("app/views/ui/sales_view.ui", self)
 
+        self._inject_customer_controls()
+        self._inject_return_mode_toggle()
         self._inject_close_shift_button()
+        self._inject_clear_cart_button()
+        self._inject_discount_control()
+        self._inject_parking_buttons()
+        self._updating_cart_items = False
+
         self._setup_cart_table()
         self._setup_shortcuts()
         self._connect_signals()
@@ -78,6 +214,49 @@ class SalesView(QWidget):
     # ------------------------------------------------------------------ #
     # UI setup
     # ------------------------------------------------------------------ #
+    def _inject_customer_controls(self) -> None:
+        try:
+            # These widgets are expected in the .ui, fall back to creating them if missing.
+            self.lblCustomer = getattr(self, "lblCustomer", None)
+            self.btnSelectCustomer = getattr(self, "btnSelectCustomer", None)
+
+            if self.lblCustomer is None:
+                self.lblCustomer = QLabel(self)
+                self.lblCustomer.setObjectName("lblSelectedCustomer")
+                self.lblCustomer.setText("مشتری: -")
+
+            if self.btnSelectCustomer is None:
+                self.btnSelectCustomer = QPushButton(self)
+                self.btnSelectCustomer.setObjectName("btnSelectCustomer")
+                self.btnSelectCustomer.setText("انتخاب مشتری")
+
+            top_layout = getattr(self, "horizontalLayout_top", None)
+            if top_layout is not None:
+                top_layout.addWidget(self.lblCustomer)
+                top_layout.addWidget(self.btnSelectCustomer)
+            else:
+                # If no dedicated layout, leave widgets unmanaged; they can still be used.
+                self.lblCustomer.setParent(self)
+                self.btnSelectCustomer.setParent(self)
+        except Exception as e:
+            logger.error("Error in _inject_customer_controls: %s", e, exc_info=True)
+
+    def _inject_return_mode_toggle(self) -> None:
+        try:
+            self.chkReturnMode = getattr(self, "chkReturnMode", None)
+            if self.chkReturnMode is None:
+                self.chkReturnMode = QCheckBox(self)
+                self.chkReturnMode.setObjectName("chkReturnMode")
+                self.chkReturnMode.setText("حالت مرجوعی")
+
+            top_layout = getattr(self, "horizontalLayout_top", None)
+            if top_layout is not None:
+                top_layout.addWidget(self.chkReturnMode)
+            else:
+                self.chkReturnMode.setParent(self)
+        except Exception as e:
+            logger.error("Error in _inject_return_mode_toggle: %s", e, exc_info=True)
+
     def _inject_close_shift_button(self) -> None:
         try:
             layout = getattr(self, "horizontalLayout_bottom", None)
@@ -98,6 +277,84 @@ class SalesView(QWidget):
             logger.info("Close Shift button injected into SalesView layout.")
         except Exception as e:
             logger.error("Error in _inject_close_shift_button: %s", e, exc_info=True)
+
+    def _inject_clear_cart_button(self) -> None:
+        try:
+            layout = getattr(self, "horizontalLayout_bottom", None)
+            if layout is None:
+                logger.warning(
+                    "SalesView bottom layout not found; cannot inject Clear Cart button."
+                )
+                return
+
+            self.btnClearCart = QPushButton(self)
+            self.btnClearCart.setObjectName("btnClearCart")
+            self.btnClearCart.setText("Clear Cart")
+
+            insert_index = max(0, layout.count() - 1)
+            layout.insertWidget(insert_index, self.btnClearCart)
+            self.btnClearCart.clicked.connect(self._on_clear_cart_clicked)
+
+            logger.info("Clear Cart button injected into SalesView layout.")
+        except Exception as e:
+            logger.error("Error in _inject_clear_cart_button: %s", e, exc_info=True)
+
+    def _inject_discount_control(self) -> None:
+        try:
+            bottom_layout = getattr(self, "horizontalLayout_bottom", None)
+            if bottom_layout is None:
+                logger.warning(
+                    "SalesView bottom layout not found; cannot inject discount control."
+                )
+                return
+
+            self.lblDiscount = getattr(self, "lblDiscount", None)
+            self.spinDiscount = getattr(self, "spinDiscount", None)
+
+            if self.lblDiscount is None:
+                self.lblDiscount = QLabel(self)
+                self.lblDiscount.setObjectName("lblDiscount")
+                self.lblDiscount.setText("تخفیف:")
+
+            if self.spinDiscount is None:
+                self.spinDiscount = QDoubleSpinBox(self)
+                self.spinDiscount.setObjectName("spinDiscount")
+                self.spinDiscount.setRange(0.0, 100_000_000.0)
+                self.spinDiscount.setDecimals(2)
+                self.spinDiscount.setSingleStep(1000.0)
+                self.spinDiscount.setValue(0.0)
+
+            # Insert before Clear Cart / Close Shift / Checkout buttons if possible
+            insert_index = max(0, bottom_layout.count() - 3)
+            bottom_layout.insertWidget(insert_index, self.lblDiscount)
+            bottom_layout.insertWidget(insert_index + 1, self.spinDiscount)
+
+            logger.info("Discount control injected into SalesView layout.")
+        except Exception as e:
+            logger.error("Error in _inject_discount_control: %s", e, exc_info=True)
+
+    def _inject_parking_buttons(self) -> None:
+        try:
+            layout = getattr(self, "horizontalLayout_bottom", None)
+            if layout is None:
+                logger.warning(
+                    "SalesView bottom layout not found; cannot inject parking buttons."
+                )
+                return
+
+            self.btnHoldOrder = QPushButton(self)
+            self.btnHoldOrder.setObjectName("btnHoldOrder")
+
+            self.btnRecallOrder = QPushButton(self)
+            self.btnRecallOrder.setObjectName("btnRecallOrder")
+
+            insert_index = max(0, layout.count() - 1)
+            layout.insertWidget(insert_index, self.btnRecallOrder)
+            layout.insertWidget(insert_index, self.btnHoldOrder)
+
+            logger.info("Hold/Recall order buttons injected into SalesView layout.")
+        except Exception as e:
+            logger.error("Error in _inject_parking_buttons: %s", e, exc_info=True)
 
     def _on_language_changed(self, language: str) -> None:
         try:
@@ -121,8 +378,38 @@ class SalesView(QWidget):
             self.btnCheckout.setText(self._translator["sales.checkout_button"])
 
             if hasattr(self, "btnCloseShift"):
-                self.btnCloseShift.setText("Close Shift")
+                self.btnCloseShift.setText(
+                    self._translator["shift.close_button"]
+                )
+            if hasattr(self, "btnClearCart"):
+                self.btnClearCart.setText(
+                    self._translator.get("sales.button.clear", "Clear Cart")
+                )
+            if hasattr(self, "btnSelectCustomer"):
+                self.btnSelectCustomer.setText(
+                    self._translator.get(
+                        "sales.button.select_customer",
+                        "Select Customer",
+                    )
+                )
+            if hasattr(self, "btnHoldOrder"):
+                self.btnHoldOrder.setText(
+                    self._translator.get("sales.button.hold", "Hold Order")
+                )
+            if hasattr(self, "btnRecallOrder"):
+                self.btnRecallOrder.setText(
+                    self._translator.get("sales.button.recall", "Recall Order")
+                )
+            if hasattr(self, "chkReturnMode"):
+                self.chkReturnMode.setText(
+                    self._translator.get("sales.mode.return", "Return Mode")
+                )
+            if hasattr(self, "lblDiscount"):
+                self.lblDiscount.setText(
+                    self._translator.get("sales.label.discount", "Discount") + ":"
+                )
 
+            self._update_customer_label()
             self._setup_cart_table()
             self._reset_total()
         except Exception as e:
@@ -135,6 +422,7 @@ class SalesView(QWidget):
             self._translator["sales.table.column.quantity"],
             self._translator["sales.table.column.price"],
             self._translator["sales.table.column.row_total"],
+            self._translator.get("sales.table.column.delete", "X"),
         ]
         self.tblCart.setColumnCount(len(headers))
         self.tblCart.setHorizontalHeaderLabels(headers)
@@ -145,15 +433,42 @@ class SalesView(QWidget):
         self.tblCart.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection
         )
+        # Allow editing where item flags permit (quantity column)
         self.tblCart.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.SelectedClicked
+        )
+
+        # Enable context menu on cart table
+        self.tblCart.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.tblCart.customContextMenuRequested.connect(
+            self._on_cart_context_menu
         )
 
         if self.tblCart.verticalHeader() is not None:
             self.tblCart.verticalHeader().setVisible(False)
+            # Increase default row height so embedded widgets (spinboxes, buttons)
+            # are fully visible and not clipped.
+            self.tblCart.verticalHeader().setDefaultSectionSize(45)
 
-        if self.tblCart.horizontalHeader() is not None:
-            self.tblCart.horizontalHeader().setStretchLastSection(True)
+        header = self.tblCart.horizontalHeader()
+        if header is not None:
+            from PyQt6.QtWidgets import QHeaderView
+
+            header.setStretchLastSection(False)
+            # Name column stretches
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            # Quantity column fixed
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(1, 70)
+            # Price and Row Total auto
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            # Delete column fixed and narrow
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(4, 40)
 
     def _setup_shortcuts(self) -> None:
         # Allow deleting the selected cart row with the Delete key
@@ -164,19 +479,255 @@ class SalesView(QWidget):
         self.txtBarcode.returnPressed.connect(self._on_barcode_entered)
         self.btnSearch.clicked.connect(self._on_barcode_entered)
         self.btnCheckout.clicked.connect(self._on_checkout_clicked)
+        if hasattr(self, "btnSelectCustomer"):
+            self.btnSelectCustomer.clicked.connect(self._on_select_customer_clicked)
+        if hasattr(self, "btnClearCart"):
+            self.btnClearCart.clicked.connect(self._on_clear_cart_clicked)
+        if hasattr(self, "btnHoldOrder"):
+            self.btnHoldOrder.clicked.connect(self._on_hold_order_clicked)
+        if hasattr(self, "btnRecallOrder"):
+            self.btnRecallOrder.clicked.connect(self._on_recall_order_clicked)
+        if hasattr(self, "chkReturnMode"):
+            self.chkReturnMode.toggled.connect(self._on_return_mode_toggled)
+        if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
+            self.spinDiscount.valueChanged.connect(lambda _: self._recalculate_total())
 
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
     def _format_money(self, amount: Decimal) -> str:
         quantized = amount.quantize(Decimal("0.01"))
-        return f"{float(quantized):.2f}"
+        sign = "-" if amount < 0 else ""
+        return f"{sign}{abs(float(quantized)):.2f}"
+
+    def _update_customer_label(self) -> None:
+        try:
+            if not hasattr(self, "lblCustomer"):
+                return
+            label_prefix = self._translator.get(
+                "sales.customer.label", "Customer: "
+            )
+            if self._selected_customer_name:
+                self.lblCustomer.setText(
+                    f"{label_prefix}{self._selected_customer_name}"
+                )
+            else:
+                self.lblCustomer.setText(f"{label_prefix}-")
+        except Exception as e:
+            logger.error("Error in _update_customer_label: %s", e, exc_info=True)
+
+    def _on_select_customer_clicked(self) -> None:
+        try:
+            result = CustomersDialog.select_customer(
+                translator=self._translator,
+                parent=self,
+            )
+            if result is None:
+                return
+            cust_id, name = result
+            self._selected_customer_id = cust_id
+            self._selected_customer_name = name
+            self._update_customer_label()
+        except Exception as e:
+            logger.error("Error in _on_select_customer_clicked: %s", e, exc_info=True)
+            QMessageBox.critical(self, "Error", str(e))
+
+    def _on_clear_cart_clicked(self) -> None:
+        try:
+            self._clear_cart()
+        except Exception as e:
+            logger.error("Error in _on_clear_cart_clicked: %s", e, exc_info=True)
+            QMessageBox.critical(self, "Error", str(e))
+
+    def _on_return_mode_toggled(self, checked: bool) -> None:
+        try:
+            self._return_mode = checked
+            # Highlight cart border in return mode
+            if checked:
+                self.tblCart.setStyleSheet(
+                    "QTableWidget { border: 2px solid #dc2626; }"
+                )
+            else:
+                self.tblCart.setStyleSheet("")
+
+            # Disable or enable discount in return mode
+            if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
+                self.spinDiscount.blockSignals(True)
+                if checked:
+                    # Disable discounts for refunds to avoid complexity
+                    self.spinDiscount.setValue(0.0)
+                    self.spinDiscount.setEnabled(False)
+                else:
+                    self.spinDiscount.setEnabled(True)
+                self.spinDiscount.blockSignals(False)
+
+            # Update prefixes and row totals
+            for row in range(self.tblCart.rowCount()):
+                spin = self._get_quantity_spinbox(row)
+                if spin is None:
+                    continue
+                spin.blockSignals(True)
+                spin.setPrefix("-" if checked else "")
+                spin.blockSignals(False)
+                self._on_quantity_changed_for_spin(spin, spin.value())
+
+            # Recalculate after mode change
+            self._recalculate_total()
+        except Exception as e:
+            logger.error("Error in _on_return_mode_toggled: %s", e, exc_info=True)
+
+    def _on_hold_order_clicked(self) -> None:
+        try:
+            cart_items = self._collect_cart_items()
+            if not cart_items:
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
+                    self._translator["sales.info.cart_empty"],
+                )
+                return
+            park_id = self._controller.park_order(
+                cart_items=cart_items,
+                cust_id=self._selected_customer_id,
+            )
+            logger.info("Order parked with ParkID=%s", park_id)
+            self._clear_cart()
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator["sales.info.order_held"],
+            )
+        except Exception as e:
+            logger.error("Error in _on_hold_order_clicked: %s", e, exc_info=True)
+            QMessageBox.critical(self, "Error", str(e))
+
+    def _on_recall_order_clicked(self) -> None:
+        try:
+            orders = self._controller.get_parked_orders()
+            if not orders:
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
+                    self._translator["sales.info.no_held_orders"],
+                )
+                return
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle(
+                self._translator.get(
+                    "sales.dialog.parked_orders.title",
+                    "Parked Orders",
+                )
+            )
+            layout = QVBoxLayout(dialog)
+            layout.setContentsMargins(12, 12, 12, 12)
+            layout.setSpacing(8)
+
+            table = QTableWidget(dialog)
+            table.setColumnCount(4)
+            table.setHorizontalHeaderLabels(
+                [
+                    self._translator.get(
+                        "sales.dialog.parked_orders.column.id", "ID"
+                    ),
+                    self._translator.get(
+                        "sales.dialog.parked_orders.column.customer",
+                        "Customer",
+                    ),
+                    self._translator.get(
+                        "sales.dialog.parked_orders.column.time", "Time"
+                    ),
+                    self._translator.get(
+                        "sales.dialog.parked_orders.column.total", "Total"
+                    ),
+                ]
+            )
+            table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            table.setSelectionMode(
+                QAbstractItemView.SelectionMode.SingleSelection
+            )
+            if table.verticalHeader() is not None:
+                table.verticalHeader().setVisible(False)
+
+            table.setRowCount(0)
+            for row_idx, order in enumerate(orders):
+                table.insertRow(row_idx)
+                id_item = QTableWidgetItem(str(order["park_id"]))
+                id_item.setData(Qt.ItemDataRole.UserRole, int(order["park_id"]))
+                cust_item = QTableWidgetItem(order.get("customer_name") or "-")
+                created = order.get("created_at")
+                created_text = (
+                    created.strftime("%Y-%m-%d %H:%M")
+                    if hasattr(created, "strftime")
+                    else ""
+                )
+                created_item = QTableWidgetItem(created_text)
+                total_item = QTableWidgetItem(self._format_money(order.get("total", Decimal("0"))))
+                total_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+
+                table.setItem(row_idx, 0, id_item)
+                table.setItem(row_idx, 1, cust_item)
+                table.setItem(row_idx, 2, created_item)
+                table.setItem(row_idx, 3, total_item)
+
+            layout.addWidget(table)
+
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok
+                | QDialogButtonBox.StandardButton.Cancel,
+                parent=dialog,
+            )
+            layout.addWidget(buttons)
+
+            def _on_accept() -> None:
+                if table.currentRow() < 0:
+                    QMessageBox.information(
+                        dialog,
+                        self._translator["dialog.info_title"],
+                        self._translator["sales.info.select_order"],
+                    )
+                    return
+                dialog.accept()
+
+            buttons.accepted.connect(_on_accept)
+            buttons.rejected.connect(dialog.reject)
+            table.doubleClicked.connect(lambda *_: _on_accept())
+
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            row = table.currentRow()
+            id_item = table.item(row, 0)
+            if id_item is None:
+                return
+            park_id = id_item.data(Qt.ItemDataRole.UserRole) or id_item.text()
+            park_id_int = int(park_id)
+
+            restored = self._controller.restore_order(park_id_int)
+            items = restored.get("items") or []
+            cust_id = restored.get("customer_id")
+            cust_name = restored.get("customer_name") or ""
+
+            self._selected_customer_id = cust_id
+            self._selected_customer_name = cust_name
+            self._update_customer_label()
+
+            self._load_cart_from_items(items)
+        except Exception as e:
+            logger.error("Error in _on_recall_order_clicked: %s", e, exc_info=True)
+            QMessageBox.critical(self, "Error", str(e))
 
     def _reset_total(self) -> None:
         total_text = self._translator["sales.total_prefix"].format(
             amount=self._format_money(Decimal("0"))
         )
         self.lblTotalAmount.setText(total_text)
+        if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
+            self.spinDiscount.blockSignals(True)
+            self.spinDiscount.setValue(0.0)
+            self.spinDiscount.blockSignals(False)
 
     def _find_cart_row_by_prod_id(self, prod_id: int) -> int:
         for row in range(self.tblCart.rowCount()):
@@ -196,23 +747,11 @@ class SalesView(QWidget):
         existing_row = self._find_cart_row_by_prod_id(prod_id)
 
         if existing_row != -1:
-            qty_item = self.tblCart.item(existing_row, 1)
-            if qty_item is None:
+            spin = self._get_quantity_spinbox(existing_row)
+            if spin is None:
                 return
-
-            try:
-                current_qty = Decimal(qty_item.text())
-            except Exception:
-                current_qty = Decimal("0")
-
-            new_qty = current_qty + Decimal("1")
-            qty_item.setText(str(int(new_qty)))
-
-            row_total_item = self.tblCart.item(existing_row, 3)
-            if row_total_item is not None:
-                row_total = new_qty * unit_price
-                row_total_item.setText(self._format_money(row_total))
-
+            new_qty = spin.value() + 1
+            spin.setValue(new_qty)
             return
 
         row = self.tblCart.rowCount()
@@ -221,10 +760,6 @@ class SalesView(QWidget):
         name_item = QTableWidgetItem(name)
         name_item.setData(Qt.ItemDataRole.UserRole, prod_id)
         name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-
-        qty_item = QTableWidgetItem("1")
-        qty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        qty_item.setFlags(qty_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
         price_item = QTableWidgetItem(self._format_money(unit_price))
         price_item.setTextAlignment(
@@ -241,9 +776,46 @@ class SalesView(QWidget):
         )
 
         self.tblCart.setItem(row, 0, name_item)
-        self.tblCart.setItem(row, 1, qty_item)
         self.tblCart.setItem(row, 2, price_item)
         self.tblCart.setItem(row, 3, row_total_item)
+
+        # Quantity spinbox inside centered container
+        spin = QSpinBox(self.tblCart)
+        spin.setMinimum(1)
+        spin.setMaximum(1000000)
+        spin.setValue(1)
+        spin.setFixedSize(60, 35)
+        spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+        spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        spin.setPrefix("-" if self._return_mode else "")
+        spin.valueChanged.connect(
+            lambda value, s=spin: self._on_quantity_changed_for_spin(s, value)
+        )
+
+        qty_container = QWidget(self.tblCart)
+        qty_layout = QHBoxLayout(qty_container)
+        qty_layout.setContentsMargins(0, 0, 0, 0)
+        qty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        qty_layout.addWidget(spin)
+        self.tblCart.setCellWidget(row, 1, qty_container)
+
+        # Delete button inside centered container
+        btn_delete = QPushButton("X", self.tblCart)
+        btn_delete.setFixedSize(28, 28)
+        btn_delete.setStyleSheet(
+            "QPushButton { background-color: #dc2626; color: #ffffff; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #b91c1c; }"
+        )
+        btn_delete.clicked.connect(
+            lambda _, b=btn_delete: self._delete_row_for_button(b)
+        )
+
+        del_container = QWidget(self.tblCart)
+        del_layout = QHBoxLayout(del_container)
+        del_layout.setContentsMargins(0, 0, 0, 0)
+        del_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        del_layout.addWidget(btn_delete)
+        self.tblCart.setCellWidget(row, 4, del_container)
 
     def _remove_selected_row(self) -> None:
         try:
@@ -251,30 +823,115 @@ class SalesView(QWidget):
             row = self.tblCart.currentRow()
             if row < 0:
                 return
-
-            self.tblCart.removeRow(row)
-            self._recalculate_total()
+            self._delete_row(row)
         except Exception as e:
             logger.error("Error in _remove_selected_row: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    def _get_quantity_spinbox(self, row: int) -> Optional[QSpinBox]:
+        container = self.tblCart.cellWidget(row, 1)
+        if container is None:
+            return None
+        spin = container.findChild(QSpinBox)
+        return spin
+
+    def _find_row_for_inner_widget(self, widget: QWidget) -> int:
+        for row in range(self.tblCart.rowCount()):
+            for col in range(self.tblCart.columnCount()):
+                cell = self.tblCart.cellWidget(row, col)
+                if cell is None:
+                    continue
+                if cell is widget or widget in cell.findChildren(QWidget):
+                    return row
+        return -1
+
+    def _delete_row_for_button(self, button: QPushButton) -> None:
+        row = self._find_row_for_inner_widget(button)
+        if row >= 0:
+            self._delete_row(row)
+
+    def _delete_row(self, row: int) -> None:
+        if row < 0 or row >= self.tblCart.rowCount():
+            return
+        self.tblCart.removeRow(row)
+        self._recalculate_total()
+
+    def _on_quantity_changed_for_spin(self, spin: QSpinBox, value: int) -> None:
+        try:
+            if self._updating_cart_items:
+                return
+            row = self._find_row_for_inner_widget(spin)
+            if row < 0:
+                return
+            price_item = self.tblCart.item(row, 2)
+            row_total_item = self.tblCart.item(row, 3)
+            if price_item is None or row_total_item is None:
+                return
+            try:
+                unit_price = Decimal(price_item.text())
+            except Exception:
+                unit_price = Decimal("0")
+            quantity = Decimal(str(value))
+            if self._return_mode:
+                quantity = -quantity
+            row_total = quantity * unit_price
+            self._updating_cart_items = True
+            row_total_item.setText(self._format_money(row_total))
+            self._updating_cart_items = False
+            self._recalculate_total()
+        except Exception as e:
+            logger.error("Error in _on_quantity_changed_for_spin: %s", e, exc_info=True)
+
+    def _on_cart_context_menu(self, pos: QPoint) -> None:
+        try:
+            index = self.tblCart.indexAt(pos)
+            if not index.isValid():
+                return
+
+            row = index.row()
+            if row < 0:
+                return
+
+            menu = QMenu(self)
+            action_delete = menu.addAction("حذف کالا")
+            action_set_qty = menu.addAction("تغییر تعداد")
+
+            global_pos = self.tblCart.viewport().mapToGlobal(pos)
+            chosen_action = menu.exec(global_pos)
+            if chosen_action is None:
+                return
+
+            if chosen_action == action_delete:
+                self._delete_row(row)
+            elif chosen_action == action_set_qty:
+                spin = self._get_quantity_spinbox(row)
+                if spin is not None:
+                    spin.setFocus()
+        except Exception as e:
+            logger.error("Error in _on_cart_context_menu: %s", e, exc_info=True)
 
     def _collect_cart_items(self) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
 
         for row in range(self.tblCart.rowCount()):
             name_item = self.tblCart.item(row, 0)
-            qty_item = self.tblCart.item(row, 1)
             price_item = self.tblCart.item(row, 2)
 
-            if name_item is None or qty_item is None or price_item is None:
+            if name_item is None or price_item is None:
                 continue
 
             prod_id = name_item.data(Qt.ItemDataRole.UserRole)
             if prod_id is None:
                 continue
 
+            spin = self._get_quantity_spinbox(row)
+            if spin is None:
+                continue
+
             try:
-                quantity = Decimal(qty_item.text())
+                quantity = Decimal(str(spin.value()))
+                if self._return_mode:
+                    quantity = -quantity
             except Exception:
                 quantity = Decimal("0")
 
@@ -299,7 +956,48 @@ class SalesView(QWidget):
             self._reset_total()
             return
 
-        total = self._controller.calculate_cart_total(cart_items)
+        subtotal = self._controller.calculate_cart_total(cart_items)
+
+        # Handle discount logic
+        discount_value = Decimal("0")
+        if (
+            not self._return_mode
+            and hasattr(self, "spinDiscount")
+            and self.spinDiscount is not None
+            and self.spinDiscount.isEnabled()
+        ):
+            try:
+                discount_value = Decimal(str(self.spinDiscount.value()))
+            except Exception:
+                discount_value = Decimal("0")
+
+            if discount_value < 0:
+                discount_value = Decimal("0")
+
+            # Cap discount at subtotal to avoid negative totals
+            if subtotal >= 0 and discount_value > subtotal:
+                discount_value = subtotal
+                try:
+                    self.spinDiscount.blockSignals(True)
+                    self.spinDiscount.setValue(float(discount_value))
+                    self.spinDiscount.blockSignals(False)
+                except Exception:
+                    pass
+        else:
+            # In return mode, force discount to zero
+            if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
+                try:
+                    self.spinDiscount.blockSignals(True)
+                    self.spinDiscount.setValue(0.0)
+                    self.spinDiscount.blockSignals(False)
+                except Exception:
+                    pass
+            discount_value = Decimal("0")
+
+        total = (subtotal - discount_value).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
         total_text = self._translator["sales.total_prefix"].format(
             amount=self._format_money(total)
         )
@@ -411,12 +1109,16 @@ class SalesView(QWidget):
             self._active_shift_id = shift_id
             QMessageBox.information(
                 self,
-                "Shift Started",
-                f"Shift started successfully.\nShift ID: {shift_id}",
+                self._translator["dialog.info_title"],
+                self._translator["shift.info.started"].format(shift_id=shift_id),
             )
         except Exception as e:
             logger.error("Error in ensure_active_shift: %s", e, exc_info=True)
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(e),
+            )
 
     def _resolve_shift_id(self) -> int:
         """
@@ -464,7 +1166,8 @@ class SalesView(QWidget):
             except Exception:
                 total_stock_dec = Decimal("0")
 
-            if total_stock_dec <= 0:
+            # In normal sale mode, enforce stock check. In return mode, we allow adding regardless of stock.
+            if not self._return_mode and total_stock_dec <= 0:
                 logger.warning(
                     "Product out of stock: ProdID=%s, Name='%s', Barcode='%s'",
                     product.get("ProdID"),
@@ -508,8 +1211,24 @@ class SalesView(QWidget):
                 )
                 return
 
-            total = self._controller.calculate_cart_total(cart_items)
-            logger.info("Calculated checkout total: %s", total)
+            subtotal = self._controller.calculate_cart_total(cart_items)
+            discount_value = Decimal("0")
+            if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
+                try:
+                    discount_value = Decimal(str(self.spinDiscount.value()))
+                except Exception:
+                    discount_value = Decimal("0")
+
+            total = (subtotal - discount_value).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            logger.info(
+                "Calculated checkout total: subtotal=%s, discount=%s, final=%s",
+                subtotal,
+                discount_value,
+                total,
+            )
 
             shift_id = self._resolve_shift_id()
 
@@ -518,6 +1237,9 @@ class SalesView(QWidget):
                 cart_items=cart_items,
                 total_amount=total,
                 payment_method="Cash",
+                cust_id=self._selected_customer_id,
+                is_refund=self._return_mode,
+                discount_amount=discount_value,
             )
 
             if success:
@@ -526,6 +1248,7 @@ class SalesView(QWidget):
                     shift_id,
                     total,
                 )
+                self._generate_receipt_pdf(cart_items, total)
                 QMessageBox.information(
                     self,
                     self._translator["dialog.info_title"],
@@ -536,6 +1259,34 @@ class SalesView(QWidget):
             logger.error("Error in _on_checkout_clicked: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
 
+    def has_active_shift(self) -> bool:
+        return self._active_shift_id is not None
+
+    def close_shift(self) -> None:
+        """
+        Close the active shift without user confirmation.
+
+        Intended for use by the main window during application shutdown.
+        """
+        try:
+            if self._active_shift_id is None:
+                return
+
+            summary = self._controller.close_shift(self._active_shift_id)
+            try:
+                self._generate_shift_report_pdf(summary)
+            except Exception as inner_exc:
+                logger.error(
+                    "Error generating shift report PDF during close_shift: %s",
+                    inner_exc,
+                    exc_info=True,
+                )
+
+            self._clear_cart()
+            self._active_shift_id = None
+        except Exception as e:
+            logger.error("Error in close_shift: %s", e, exc_info=True)
+
     def _on_close_shift_clicked(self) -> None:
         try:
             logger.info("Close Shift button clicked.")
@@ -543,15 +1294,15 @@ class SalesView(QWidget):
             if self._active_shift_id is None:
                 QMessageBox.warning(
                     self,
-                    "No Active Shift",
-                    "There is no active shift to close.",
+                    self._translator["dialog.warning_title"],
+                    self._translator["shift.info.no_active_shift"],
                 )
                 return
 
             confirm = QMessageBox.question(
                 self,
-                "Close Shift",
-                "Are you sure you want to close the current shift?",
+                self._translator["shift.close_confirm_title"],
+                self._translator["shift.close_confirm_body"],
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if confirm != QMessageBox.StandardButton.Yes:
@@ -559,23 +1310,542 @@ class SalesView(QWidget):
                 return
 
             summary = self._controller.close_shift(self._active_shift_id)
-            total_sales = summary.get("total_sales", Decimal("0"))
-            invoice_count = summary.get("invoice_count", 0)
+            self._generate_shift_report_pdf(summary)
 
-            formatted_total = f"{float(total_sales):,.2f}"
+            # Reset shift-related UI state
+            self._clear_cart()
+            self._active_shift_id = None
 
             QMessageBox.information(
                 self,
-                "Shift Closed",
-                f"Shift closed successfully.\n\n"
-                f"Total sales in this shift: {formatted_total}\n"
-                f"Total invoices: {invoice_count}",
+                self._translator["dialog.info_title"],
+                self._translator["shift.close_report_title"],
             )
-
-            self._active_shift_id = None
         except Exception as e:
             logger.error("Error in _on_close_shift_clicked: %s", e, exc_info=True)
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(e),
+            )
+
+    def _build_shift_report_html(self, summary: Dict[str, Any]) -> str:
+        try:
+            shift_id = summary.get("shift_id")
+            total_sales = summary.get("total_sales", Decimal("0"))
+            invoice_count = summary.get("invoice_count", 0)
+            cash_float = summary.get("cash_float", Decimal("0"))
+            final_balance = summary.get("final_balance")
+            start_cash = summary.get("start_cash", Decimal("0"))
+            start_time = summary.get("start_time")
+            end_time = summary.get("end_time")
+            employee_name = summary.get("employee_name") or (
+                getattr(self._current_user, "Username", "")
+                if self._current_user is not None
+                else ""
+            )
+            items = summary.get("items") or []
+
+            def _fmt_money(value: Any) -> str:
+                try:
+                    dec_value = (
+                        value
+                        if isinstance(value, Decimal)
+                        else Decimal(str(value or "0"))
+                    )
+                except Exception:
+                    dec_value = Decimal("0")
+                return f"{float(dec_value.quantize(Decimal('0.01'))):,.2f}"
+
+            def _fmt_datetime(value: Any) -> str:
+                try:
+                    if hasattr(value, "strftime"):
+                        return value.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    pass
+                return "-" if value is None else str(value)
+
+            if final_balance is None:
+                final_balance = start_cash + total_sales
+
+            rows_html = ""
+            for index, item in enumerate(items, start=1):
+                name = item.get("name", "")
+                quantity = item.get("quantity", 0)
+                total = item.get("total", Decimal("0"))
+
+                try:
+                    quantity_dec = Decimal(str(quantity))
+                    quantity_str = f"{float(quantity_dec):,.2f}"
+                except Exception:
+                    quantity_str = str(quantity)
+
+                rows_html += f"""
+                    <tr>
+                        <td>{index}</td>
+                        <td>{name}</td>
+                        <td>{quantity_str}</td>
+                        <td>{_fmt_money(total)}</td>
+                    </tr>
+                """
+
+            title = self._translator["shift.close_report_title"]
+            summary_title = self._translator["shift.report.summary_title"]
+            items_title = self._translator["shift.report.items_title"]
+
+            label_shift_id = self._translator["shift.report.label.shift_id"]
+            label_employee = self._translator["shift.report.label.employee"]
+            label_start_time = self._translator["shift.report.label.start_time"]
+            label_end_time = self._translator["shift.report.label.end_time"]
+            label_cash_float = self._translator["shift.report.label.cash_float"]
+            label_total_sales = self._translator["shift.report.label.total_sales"]
+            label_order_count = self._translator["shift.report.label.order_count"]
+            label_final_balance = self._translator["shift.report.label.final_balance"]
+
+            header_name = self._translator["shift.report.table.header.name"]
+            header_quantity = self._translator["shift.report.table.header.quantity"]
+            header_total = self._translator["shift.report.table.header.total"]
+
+            html = f"""
+            <html dir="rtl">
+              <head>
+                <meta charset="utf-8" />
+                <style>
+                    body {{
+                        font-family: 'Tahoma', 'Vazirmatn', sans-serif;
+                        font-size: 10pt;
+                        direction: rtl;
+                    }}
+                    h1 {{
+                        font-size: 14pt;
+                        margin-bottom: 8px;
+                        text-align: center;
+                    }}
+                    h2 {{
+                        font-size: 12pt;
+                        margin-top: 16px;
+                        margin-bottom: 6px;
+                    }}
+                    table {{
+                        border-collapse: collapse;
+                        width: 100%;
+                    }}
+                    th, td {{
+                        border: 1px solid black;
+                        padding: 8px;
+                        text-align: center;
+                    }}
+                    th {{
+                        background-color: #0f172a;
+                        color: #f9fafb;
+                    }}
+                </style>
+              </head>
+              <body>
+                <h1>{title}</h1>
+
+                <h2>{summary_title}</h2>
+                <table>
+                  <tr>
+                    <th>{label_shift_id}</th>
+                    <td>{shift_id}</td>
+                    <th>{label_employee}</th>
+                    <td>{employee_name}</td>
+                  </tr>
+                  <tr>
+                    <th>{label_start_time}</th>
+                    <td>{_fmt_datetime(start_time)}</td>
+                    <th>{label_end_time}</th>
+                    <td>{_fmt_datetime(end_time)}</td>
+                  </tr>
+                  <tr>
+                    <th>{label_cash_float}</th>
+                    <td>{_fmt_money(cash_float)}</td>
+                    <th>{label_total_sales}</th>
+                    <td>{_fmt_money(total_sales)}</td>
+                  </tr>
+                  <tr>
+                    <th>{label_order_count}</th>
+                    <td>{invoice_count}</td>
+                    <th>{label_final_balance}</th>
+                    <td>{_fmt_money(final_balance)}</td>
+                  </tr>
+                </table>
+
+                <h2>{items_title}</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>{header_name}</th>
+                      <th>{header_quantity}</th>
+                      <th>{header_total}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows_html}
+                  </tbody>
+                </table>
+              </body>
+            </html>
+            """
+            return html
+        except Exception as e:
+            logger.error("Error while building shift report HTML: %s", e, exc_info=True)
+            return f"<html><body><pre>{summary}</pre></body></html>"
+
+    def _generate_shift_report_pdf(self, summary: Dict[str, Any]) -> None:
+        try:
+            if not summary:
+                return
+
+            html = self._build_shift_report_html(summary)
+
+            default_filename = f"shift_{summary.get('shift_id', 'report')}.pdf"
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                self._translator["shift.report.save_dialog_title"],
+                default_filename,
+                "PDF Files (*.pdf)",
+            )
+            if not filename:
+                logger.info("User cancelled saving shift report PDF.")
+                return
+
+            document = QTextDocument()
+            document.setHtml(html)
+
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(filename)
+
+            document.print(printer)
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator["shift.report.info.saved"].format(path=filename),
+            )
+        except Exception as e:
+            logger.error("Error generating shift report PDF: %s", e, exc_info=True)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                self._translator["shift.report.error.save_failed"].format(
+                    details=str(e)
+                ),
+            )
+
+    def _build_receipt_html(
+        self,
+        cart_items: List[Dict[str, Any]],
+        total: Decimal,
+        subtotal: Optional[Decimal] = None,
+        discount: Optional[Decimal] = None,
+        is_refund: bool = False,
+    ) -> str:
+        try:
+            lines_html = ""
+            for item in cart_items:
+                name = str(item.get("Name", ""))
+                qty = item.get("Quantity", Decimal("0"))
+                unit_price = item.get("UnitPrice", Decimal("0"))
+                try:
+                    qty_dec = (
+                        qty
+                        if isinstance(qty, Decimal)
+                        else Decimal(str(qty or "0"))
+                    )
+                except Exception:
+                    qty_dec = Decimal("0")
+                try:
+                    price_dec = (
+                        unit_price
+                        if isinstance(unit_price, Decimal)
+                        else Decimal(str(unit_price or "0"))
+                    )
+                except Exception:
+                    price_dec = Decimal("0")
+                line_total = (qty_dec * price_dec) if qty_dec and price_dec else Decimal("0")
+                lines_html += f"""
+                <tr>
+                  <td>{name}</td>
+                  <td style="text-align:center;">{qty_dec}</td>
+                  <td style="text-align:right;">{self._format_money(price_dec)}</td>
+                  <td style="text-align:right;">{self._format_money(line_total)}</td>
+                </tr>
+                """
+
+            customer_line = self._selected_customer_name or "-"
+            tx_type = "مرجوعی" if is_refund else "فروش"
+
+            if subtotal is None:
+                subtotal = total
+            if discount is None:
+                discount = Decimal("0")
+
+            title_sale = self._translator["sales.receipt.title_sale"]
+            title_refund = self._translator["sales.receipt.title_refund"]
+            tx_title = title_refund if is_refund else title_sale
+
+            customer_label = self._translator["sales.receipt.customer_label"]
+            subtotal_label = self._translator["sales.receipt.subtotal_label"]
+            discount_label = self._translator["sales.receipt.discount_label"]
+            total_label = self._translator["sales.receipt.total_label"]
+
+            col_name = self._translator["sales.receipt.table.header.name"]
+            col_qty = self._translator["sales.receipt.table.header.quantity"]
+            col_price = self._translator["sales.receipt.table.header.price"]
+            col_total = self._translator["sales.receipt.table.header.total"]
+
+            html = f"""
+            <html dir="rtl">
+              <head>
+                <meta charset="utf-8" />
+                <style>
+                  @page {{
+                    size: 80mm auto;
+                    margin: 4mm;
+                  }}
+                  body {{
+                    width: 80mm;
+                    font-family: 'Tahoma', 'Vazirmatn', sans-serif;
+                    font-size: 9pt;
+                    direction: rtl;
+                  }}
+                  h1 {{
+                    font-size: 11pt;
+                    text-align: center;
+                    margin: 0 0 4px 0;
+                  }}
+                  table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 4px;
+                  }}
+                  th, td {{
+                    border-bottom: 1px dashed #999;
+                    padding: 2px 0;
+                  }}
+                  th {{
+                    text-align: center;
+                  }}
+                  .total-row td {{
+                    border-top: 1px solid #000;
+                    font-weight: bold;
+                  }}
+                  .meta {{
+                    font-size: 8pt;
+                    margin-top: 4px;
+                  }}
+                </style>
+              </head>
+              <body>
+                <h1>{tx_title}</h1>
+                <div class="meta">{customer_label}: {customer_line}</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{col_name}</th>
+                      <th>{col_qty}</th>
+                      <th>{col_price}</th>
+                      <th>{col_total}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines_html}
+                    <tr>
+                      <td colspan="3" style="text-align:left;">{subtotal_label}</td>
+                      <td style="text-align:right;">{self._format_money(subtotal)}</td>
+                    </tr>
+                    <tr>
+                      <td colspan="3" style="text-align:left;">{discount_label}</td>
+                      <td style="text-align:right;">{self._format_money(discount)}</td>
+                    </tr>
+                    <tr class="total-row">
+                      <td colspan="3" style="text-align:left;">{total_label}</td>
+                      <td style="text-align:right;">{self._format_money(total)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </body>
+            </html>
+            """
+            return html
+        except Exception as e:
+            logger.error("Error while building receipt HTML: %s", e, exc_info=True)
+            return "<html><body><pre>Receipt error</pre></body></html>"
+
+    def _generate_receipt_pdf(
+        self,
+        cart_items: List[Dict[str, Any]],
+        total: Decimal,
+    ) -> None:
+        try:
+            if not cart_items:
+                return
+
+            # Enrich with product names for receipt
+            enriched_items: List[Dict[str, Any]] = []
+            for row in range(self.tblCart.rowCount()):
+                name_item = self.tblCart.item(row, 0)
+                if name_item is None:
+                    continue
+                spin = self._get_quantity_spinbox(row)
+                price_item = self.tblCart.item(row, 2)
+                if spin is None or price_item is None:
+                    continue
+                try:
+                    qty = Decimal(str(spin.value()))
+                    if self._return_mode:
+                        qty = -qty
+                except Exception:
+                    qty = Decimal("0")
+                try:
+                    unit_price = Decimal(price_item.text())
+                except Exception:
+                    unit_price = Decimal("0")
+                enriched_items.append(
+                    {
+                        "Name": name_item.text(),
+                        "Quantity": qty,
+                        "UnitPrice": unit_price,
+                    }
+                )
+
+            subtotal = self._controller.calculate_cart_total(enriched_items)
+            discount_value = Decimal("0")
+            if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
+                try:
+                    discount_value = Decimal(str(self.spinDiscount.value()))
+                except Exception:
+                    discount_value = Decimal("0")
+
+            html = self._build_receipt_html(
+                enriched_items,
+                total,
+                subtotal=subtotal,
+                discount=discount_value,
+                is_refund=self._return_mode,
+            )
+
+            default_filename = "receipt.pdf"
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                self._translator.get(
+                    "sales.receipt.save_dialog_title",
+                    "Save sales receipt as PDF",
+                ),
+                default_filename,
+                "PDF Files (*.pdf)",
+            )
+            if not filename:
+                logger.info("User cancelled saving sales receipt PDF.")
+                return
+
+            document = QTextDocument()
+            document.setHtml(html)
+
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(filename)
+            # Configure page size to 80mm width
+            margins = QMarginsF(2, 2, 2, 2)
+            printer.setPageMargins(margins, QPageLayout.Unit.Millimeter)
+
+            document.print(printer)
+        except Exception as e:
+            logger.error("Error generating receipt PDF: %s", e, exc_info=True)
+
+    def _load_cart_from_items(self, items: List[Dict[str, Any]]) -> None:
+        try:
+            self._clear_cart()
+            for item in items:
+                try:
+                    prod_id = int(item.get("ProdID"))
+                except Exception:
+                    continue
+                name = str(item.get("Name", ""))
+                unit_price = Decimal(str(item.get("UnitPrice", "0")))
+                quantity = Decimal(str(item.get("Quantity", "0")))
+                if quantity <= 0:
+                    quantity = abs(quantity)
+
+                row = self.tblCart.rowCount()
+                self.tblCart.insertRow(row)
+
+                name_item = QTableWidgetItem(name)
+                name_item.setData(Qt.ItemDataRole.UserRole, prod_id)
+                name_item.setFlags(
+                    name_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
+
+                price_item = QTableWidgetItem(self._format_money(unit_price))
+                price_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight
+                    | Qt.AlignmentFlag.AlignVCenter
+                )
+                price_item.setFlags(
+                    price_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
+
+                row_total = unit_price * quantity
+                row_total_item = QTableWidgetItem(
+                    self._format_money(row_total)
+                )
+                row_total_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight
+                    | Qt.AlignmentFlag.AlignVCenter
+                )
+                row_total_item.setFlags(
+                    row_total_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
+
+                self.tblCart.setItem(row, 0, name_item)
+                self.tblCart.setItem(row, 2, price_item)
+                self.tblCart.setItem(row, 3, row_total_item)
+
+                spin = QSpinBox(self.tblCart)
+                spin.setMinimum(1)
+                spin.setMaximum(1000000)
+                spin.setValue(int(quantity))
+                spin.setFixedSize(60, 35)
+                spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+                spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                spin.setPrefix("-" if self._return_mode else "")
+                spin.valueChanged.connect(
+                    lambda value, s=spin: self._on_quantity_changed_for_spin(
+                        s, value
+                    )
+                )
+
+                qty_container = QWidget(self.tblCart)
+                qty_layout = QHBoxLayout(qty_container)
+                qty_layout.setContentsMargins(0, 0, 0, 0)
+                qty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                qty_layout.addWidget(spin)
+                self.tblCart.setCellWidget(row, 1, qty_container)
+
+                btn_delete = QPushButton("X", self.tblCart)
+                btn_delete.setFixedSize(28, 28)
+                btn_delete.setStyleSheet(
+                    "QPushButton { background-color: #dc2626; color: #ffffff; border: none; border-radius: 4px; }"
+                    "QPushButton:hover { background-color: #b91c1c; }"
+                )
+                btn_delete.clicked.connect(
+                    lambda _, b=btn_delete: self._delete_row_for_button(b)
+                )
+
+                del_container = QWidget(self.tblCart)
+                del_layout = QHBoxLayout(del_container)
+                del_layout.setContentsMargins(0, 0, 0, 0)
+                del_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                del_layout.addWidget(btn_delete)
+                self.tblCart.setCellWidget(row, 4, del_container)
+
+            self._recalculate_total()
+        except Exception as e:
+            logger.error("Error in _load_cart_from_items: %s", e, exc_info=True)
 
     def _clear_cart(self) -> None:
         self.tblCart.setRowCount(0)

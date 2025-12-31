@@ -16,7 +16,7 @@ SessionFactory = Callable[[], Session]
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ROLE_TITLES: tuple[str, ...] = ("Admin", "Cashier", "StoreKeeper")
+DEFAULT_ROLE_TITLES: tuple[str, ...] = ("Admin", "Cashier", "Warehouse")
 
 
 class UserController:
@@ -96,6 +96,12 @@ class UserController:
     # ------------------------------------------------------------------ #
     # User listing / lookup
     # ------------------------------------------------------------------ #
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """
+        Convenience wrapper to fetch all users without filtering.
+        """
+        return self.list_users(search=None)
+
     def list_users(self, search: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Return a list of users for display in the Users table.
@@ -396,11 +402,39 @@ class UserController:
 
         This avoids breaking historical references (e.g. invoices linked to the
         employee) while effectively removing login access.
+
+        Admin users are protected from deletion to avoid accidental lockout.
         """
         with self._get_session() as session:
             with session.begin():
                 user: Optional[UserAccount] = session.get(UserAccount, user_id)
                 if user is None:
+                    return
+
+                # Protect Admin accounts from deletion
+                is_admin = False
+                try:
+                    for user_role in user.user_roles:
+                        if (
+                            user_role.role is not None
+                            and str(user_role.role.Title).strip().lower() == "admin"
+                        ):
+                            is_admin = True
+                            break
+                except Exception as exc:
+                    logger.error(
+                        "Error while checking roles for user_id=%s: %s",
+                        user_id,
+                        exc,
+                        exc_info=True,
+                    )
+
+                if is_admin:
+                    logger.warning(
+                        "Attempted to delete Admin user '%s' (UserID=%s); operation blocked.",
+                        user.Username,
+                        user.UserID,
+                    )
                     return
 
                 employee: Optional[Employee] = user.employee

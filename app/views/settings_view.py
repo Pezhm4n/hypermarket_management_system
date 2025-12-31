@@ -9,7 +9,9 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
-    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -63,144 +65,154 @@ class SettingsView(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(20)
 
-        # Profile section
-        self.lblProfileTitle = QLabel(self)
-        self.lblProfileTitle.setObjectName("settingsProfileTitleLabel")
+        # -----------------------------
+        # User Profile card
+        # -----------------------------
+        self.grpProfile = QGroupBox(self)
+        self.grpProfile.setObjectName("settingsProfileGroupBox")
+        profile_outer_layout = QVBoxLayout(self.grpProfile)
+        profile_outer_layout.setContentsMargins(16, 16, 16, 16)
+        profile_outer_layout.setSpacing(12)
 
-        profile_layout = QFormLayout()
-        profile_layout.setLabelAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        profile_layout.setFormAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-        )
-        profile_layout.setHorizontalSpacing(12)
-        profile_layout.setVerticalSpacing(12)
-        profile_layout.setFieldGrowthPolicy(
-            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
-        )
+        profile_grid = QGridLayout()
+        profile_grid.setHorizontalSpacing(16)
+        profile_grid.setVerticalSpacing(12)
 
-        self.txtProfileFirstName = QLineEdit(self)
-        self.txtProfileLastName = QLineEdit(self)
-        self.txtProfileNationalID = QLineEdit(self)
-        self.txtProfileUsername = QLineEdit(self)
-        self.txtProfileMobile = QLineEdit(self)
+        self.lblProfileFirstName = QLabel(self.grpProfile)
+        self.lblProfileLastName = QLabel(self.grpProfile)
+        self.lblProfileNationalID = QLabel(self.grpProfile)
+        self.lblProfileUsername = QLabel(self.grpProfile)
+        self.lblProfileMobile = QLabel(self.grpProfile)
 
-        # Ensure profile inputs have a comfortable height
-        for w in (
-            self.txtProfileFirstName,
-            self.txtProfileLastName,
-            self.txtProfileNationalID,
-            self.txtProfileUsername,
-            self.txtProfileMobile,
-        ):
-            w.setMinimumHeight(32)
+        self.txtProfileFirstName = QLineEdit(self.grpProfile)
+        self.txtProfileLastName = QLineEdit(self.grpProfile)
+        self.txtProfileNationalID = QLineEdit(self.grpProfile)
+        self.txtProfileUsername = QLineEdit(self.grpProfile)
+        self.txtProfileMobile = QLineEdit(self.grpProfile)
 
-        # Read-only fields
+        # Read-only profile fields
         self.txtProfileFirstName.setReadOnly(True)
         self.txtProfileLastName.setReadOnly(True)
         self.txtProfileNationalID.setReadOnly(True)
         self.txtProfileUsername.setReadOnly(True)
 
-        self.lblProfileFirstName = QLabel(self)
-        self.lblProfileLastName = QLabel(self)
-        self.lblProfileNationalID = QLabel(self)
-        self.lblProfileUsername = QLabel(self)
-        self.lblProfileMobile = QLabel(self)
+        # Grid layout: 2-column card style (label + field pairs)
+        # Row 0: First / Last name
+        profile_grid.addWidget(self.lblProfileFirstName, 0, 0)
+        profile_grid.addWidget(self.txtProfileFirstName, 0, 1)
+        profile_grid.addWidget(self.lblProfileLastName, 0, 2)
+        profile_grid.addWidget(self.txtProfileLastName, 0, 3)
 
-        profile_layout.addRow(self.lblProfileFirstName, self.txtProfileFirstName)
-        profile_layout.addRow(self.lblProfileLastName, self.txtProfileLastName)
-        profile_layout.addRow(self.lblProfileNationalID, self.txtProfileNationalID)
-        profile_layout.addRow(self.lblProfileUsername, self.txtProfileUsername)
-        profile_layout.addRow(self.lblProfileMobile, self.txtProfileMobile)
+        # Row 1: Mobile / National ID
+        profile_grid.addWidget(self.lblProfileMobile, 1, 0)
+        profile_grid.addWidget(self.txtProfileMobile, 1, 1)
+        profile_grid.addWidget(self.lblProfileNationalID, 1, 2)
+        profile_grid.addWidget(self.txtProfileNationalID, 1, 3)
 
-        self.btnSaveProfile = QPushButton(self)
+        # Row 2: Username spanning both columns
+        profile_grid.addWidget(self.lblProfileUsername, 2, 0)
+        profile_grid.addWidget(self.txtProfileUsername, 2, 1, 1, 3)
+
+        profile_grid.setColumnStretch(1, 1)
+        profile_grid.setColumnStretch(3, 1)
+
+        profile_outer_layout.addLayout(profile_grid)
+
+        # Profile actions row
+        self.btnSaveProfile = QPushButton(self.grpProfile)
         self.btnSaveProfile.setObjectName("btnSaveProfile")
+        profile_actions = QHBoxLayout()
+        profile_actions.addStretch()
+        profile_actions.addWidget(self.btnSaveProfile)
+        profile_outer_layout.addLayout(profile_actions)
 
-        layout.addWidget(self.lblProfileTitle)
-        layout.addLayout(profile_layout)
-        layout.addWidget(
-            self.btnSaveProfile,
-            alignment=Qt.AlignmentFlag.AlignRight,
-        )
+        layout.addWidget(self.grpProfile)
 
-        # Password section
-        self.lblTitle = QLabel(self)
-        self.lblTitle.setObjectName("settingsTitleLabel")
+        # -----------------------------
+        # Security / Password card
+        # -----------------------------
+        self.grpSecurity = QGroupBox(self)
+        self.grpSecurity.setObjectName("settingsSecurityGroupBox")
+        security_outer_layout = QVBoxLayout(self.grpSecurity)
+        security_outer_layout.setContentsMargins(16, 16, 16, 16)
+        security_outer_layout.setSpacing(12)
 
-        form_layout = QFormLayout()
-        form_layout.setLabelAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        form_layout.setFormAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-        )
-        form_layout.setHorizontalSpacing(12)
-        form_layout.setVerticalSpacing(12)
-        form_layout.setFieldGrowthPolicy(
-            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
-        )
+        security_grid = QGridLayout()
+        security_grid.setHorizontalSpacing(16)
+        security_grid.setVerticalSpacing(12)
 
-        self.lblCurrentPassword = QLabel(self)
-        self.txtCurrentPassword = QLineEdit(self)
+        self.lblCurrentPassword = QLabel(self.grpSecurity)
+        self.txtCurrentPassword = QLineEdit(self.grpSecurity)
         self.txtCurrentPassword.setEchoMode(QLineEdit.EchoMode.Password)
 
-        self.lblNewPassword = QLabel(self)
-        self.txtNewPassword = QLineEdit(self)
+        self.lblNewPassword = QLabel(self.grpSecurity)
+        self.txtNewPassword = QLineEdit(self.grpSecurity)
         self.txtNewPassword.setEchoMode(QLineEdit.EchoMode.Password)
 
-        self.lblConfirmPassword = QLabel(self)
-        self.txtConfirmPassword = QLineEdit(self)
+        self.lblConfirmPassword = QLabel(self.grpSecurity)
+        self.txtConfirmPassword = QLineEdit(self.grpSecurity)
         self.txtConfirmPassword.setEchoMode(QLineEdit.EchoMode.Password)
 
-        for w in (
-            self.txtCurrentPassword,
-            self.txtNewPassword,
-            self.txtConfirmPassword,
-        ):
-            w.setMinimumHeight(32)
+        # Grid layout: single column of fields
+        security_grid.addWidget(self.lblCurrentPassword, 0, 0)
+        security_grid.addWidget(self.txtCurrentPassword, 0, 1)
 
-        form_layout.addRow(self.lblCurrentPassword, self.txtCurrentPassword)
-        form_layout.addRow(self.lblNewPassword, self.txtNewPassword)
-        form_layout.addRow(self.lblConfirmPassword, self.txtConfirmPassword)
+        security_grid.addWidget(self.lblNewPassword, 1, 0)
+        security_grid.addWidget(self.txtNewPassword, 1, 1)
 
-        self.btnSavePassword = QPushButton(self)
+        security_grid.addWidget(self.lblConfirmPassword, 2, 0)
+        security_grid.addWidget(self.txtConfirmPassword, 2, 1)
+
+        security_grid.setColumnStretch(1, 1)
+
+        security_outer_layout.addLayout(security_grid)
+
+        # Security actions row
+        self.btnSavePassword = QPushButton(self.grpSecurity)
         self.btnSavePassword.setObjectName("btnSavePassword")
+        security_actions = QHBoxLayout()
+        security_actions.addStretch()
+        security_actions.addWidget(self.btnSavePassword)
+        security_outer_layout.addLayout(security_actions)
 
-        layout.addWidget(self.lblTitle)
-        layout.addLayout(form_layout)
-        layout.addWidget(
-            self.btnSavePassword,
-            alignment=Qt.AlignmentFlag.AlignRight,
-        )
+        layout.addWidget(self.grpSecurity)
 
-        # Appearance section
-        self.lblAppearanceTitle = QLabel(self)
-        self.lblThemeLabel = QLabel(self)
-        self.cmbTheme = QComboBox(self)
+        # -----------------------------
+        # Appearance card
+        # -----------------------------
+        self.grpAppearance = QGroupBox(self)
+        self.grpAppearance.setObjectName("settingsAppearanceGroupBox")
+        appearance_outer_layout = QVBoxLayout(self.grpAppearance)
+        appearance_outer_layout.setContentsMargins(16, 16, 16, 16)
+        appearance_outer_layout.setSpacing(12)
 
-        self.lblFontScaleLabel = QLabel(self)
-        self.cmbFontScale = QComboBox(self)
+        self.lblThemeLabel = QLabel(self.grpAppearance)
+        self.cmbTheme = QComboBox(self.grpAppearance)
 
-        appearance_layout = QFormLayout()
-        appearance_layout.setLabelAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        appearance_layout.setFormAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-        )
-        appearance_layout.setHorizontalSpacing(12)
-        appearance_layout.setVerticalSpacing(8)
-        appearance_layout.setFieldGrowthPolicy(
-            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
-        )
+        self.lblFontScaleLabel = QLabel(self.grpAppearance)
+        self.cmbFontScale = QComboBox(self.grpAppearance)
 
-        appearance_layout.addRow(self.lblThemeLabel, self.cmbTheme)
-        appearance_layout.addRow(self.lblFontScaleLabel, self.cmbFontScale)
+        # Horizontal layout for theme / font scale controls
+        appearance_row_layout = QHBoxLayout()
+        appearance_row_layout.setSpacing(24)
 
-        layout.addSpacing(16)
-        layout.addWidget(self.lblAppearanceTitle)
-        layout.addLayout(appearance_layout)
+        theme_column = QVBoxLayout()
+        theme_column.setSpacing(6)
+        theme_column.addWidget(self.lblThemeLabel)
+        theme_column.addWidget(self.cmbTheme)
+
+        font_column = QVBoxLayout()
+        font_column.setSpacing(6)
+        font_column.addWidget(self.lblFontScaleLabel)
+        font_column.addWidget(self.cmbFontScale)
+
+        appearance_row_layout.addLayout(theme_column)
+        appearance_row_layout.addLayout(font_column)
+        appearance_row_layout.addStretch()
+
+        appearance_outer_layout.addLayout(appearance_row_layout)
+
+        layout.addWidget(self.grpAppearance)
 
         layout.addStretch()
 
@@ -270,7 +282,8 @@ class SettingsView(QWidget):
             self.setWindowTitle(self._translator["settings.page_title"])
 
             # Profile section
-            self.lblProfileTitle.setText(self._translator["settings.profile.title"])
+            if hasattr(self, "grpProfile"):
+                self.grpProfile.setTitle(self._translator["settings.profile.title"])
             self.lblProfileFirstName.setText(
                 self._translator["users.dialog.field.first_name"]
             )
@@ -291,9 +304,10 @@ class SettingsView(QWidget):
             )
 
             # Password section
-            self.lblTitle.setText(
-                self._translator["settings.change_password.title"]
-            )
+            if hasattr(self, "grpSecurity"):
+                self.grpSecurity.setTitle(
+                    self._translator["settings.change_password.title"]
+                )
             self.lblCurrentPassword.setText(
                 self._translator["settings.change_password.current"]
             )
@@ -308,9 +322,10 @@ class SettingsView(QWidget):
             )
 
             # Appearance section
-            self.lblAppearanceTitle.setText(
-                self._translator["settings.appearance.title"]
-            )
+            if hasattr(self, "grpAppearance"):
+                self.grpAppearance.setTitle(
+                    self._translator["settings.appearance.title"]
+                )
             self.lblThemeLabel.setText(self._translator["settings.theme.label"])
             self.lblFontScaleLabel.setText(
                 self._translator["settings.font_scale.label"]

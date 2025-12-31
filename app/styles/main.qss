@@ -161,8 +161,8 @@ QDoubleSpinBox,
 QComboBox {
     background-color: #020617;
     border: 1px solid #374151;      /* Gray 700 */
-    border-radius: 6px;
-    padding: 4px 6px;
+    border-radius: 4px;
+    padding: 4px 8px;
     selection-background-color: #0ea5e9;
     selection-color: #020617;
 }
@@ -176,12 +176,16 @@ QComboBox:focus {
     border: 1px solid #0ea5e9;
 }
 
-/* Compact, professional input sizing */
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-    min-height: 32px;      /* Standard professional height */
-    padding: 4px 8px;      /* Comfortable but not huge */
+/* Material-like input sizing for dark theme */
+QLineEdit,
+QComboBox,
+QSpinBox,
+QDoubleSpinBox {
+    min-height: 36px;
+    padding: 4px 8px;
+    margin: 4px 0;
     border: 1px solid #374151;
-    border-radius: 6px;
+    border-radius: 4px;
     background-color: #020617;
 }
 

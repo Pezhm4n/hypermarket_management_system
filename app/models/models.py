@@ -13,6 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import Text
 
 Base = declarative_base()
 
@@ -189,9 +190,10 @@ class Product(Base):
     Name = Column(String, nullable=False)
     Barcode = Column(String, nullable=False, unique=True)
     BasePrice = Column(Numeric(12, 2))
-    MinStockLevel = Column(Integer)
+    MinStockLevel = Column(Numeric(12, 2))
     IsPerishable = Column(Boolean, server_default=text("false"))
     IsActive = Column(Boolean, server_default=text("true"))
+    Unit = Column(String(20), default="Pcs")
     CatID = Column(
         Integer,
         ForeignKey("category.CatID"),
@@ -366,7 +368,7 @@ class Shift(Base):
     StartCash = Column(Numeric(12, 2))
     EndCash = Column(Numeric(12, 2))
     SystemCalculatedCash = Column(Numeric(12, 2))
-    CashFloat = Column(Numeric(12, 2))
+    CashFloat = Column(Numeric(15, 2), default=0)
     Status = Column(String)  # Open, Closed
 
     # Relationships
@@ -386,12 +388,17 @@ class Customer(Base):
     CustID = Column(Integer, primary_key=True, autoincrement=True)
     FullName = Column(String)
     Phone = Column(String, unique=True)
+    SubscriptionCode = Column(String, unique=True, nullable=True)
     RegDate = Column(DateTime)
     LoyaltyPoints = Column(Integer, server_default=text("0"))
 
     # Relationships
     invoices = relationship(
         "Invoice",
+        back_populates="customer",
+    )
+    parked_orders = relationship(
+        "ParkedOrder",
         back_populates="customer",
     )
 
@@ -404,6 +411,7 @@ class Invoice(Base):
     CustID = Column(Integer, ForeignKey("customer.CustID"), nullable=True)
     Date = Column(DateTime, server_default=func.now())
     TotalAmount = Column(Numeric(12, 2))
+    Discount = Column(Numeric(15, 2), default=0)
     Status = Column(String)  # Draft, Completed, Void
 
     __table_args__ = (
@@ -484,6 +492,21 @@ class Payment(Base):
     invoice = relationship(
         "Invoice",
         back_populates="payments",
+    )
+
+
+class ParkedOrder(Base):
+    __tablename__ = "parked_order"
+
+    ParkID = Column(Integer, primary_key=True, autoincrement=True)
+    CreatedAt = Column(DateTime, server_default=func.now())
+    CustID = Column(Integer, ForeignKey("customer.CustID"), nullable=True)
+    CartData = Column(Text, nullable=False)
+
+    # Relationships
+    customer = relationship(
+        "Customer",
+        back_populates="parked_orders",
     )
 
 

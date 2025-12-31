@@ -5,7 +5,7 @@ import sys
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
-from sqlalchemy import text
+from sqlalchemy import text, inspect, Integer, Numeric
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import CONFIG
@@ -23,30 +23,111 @@ logger = logging.getLogger(__name__)
 
 def init_database() -> None:
     """
-    Initialize the database schema if it does not already exist and apply
-    lightweight migrations for new columns.
+    Initialize the database schema and apply lightweight self-healing migrations.
+
+    This function will:
+      * Create tables that do not exist.
+      * Add missing columns used by the application.
+      * Adjust column types where required (e.g., MinStockLevel to NUMERIC).
     """
     try:
+        # Ensure all tables defined in the ORM exist.
         Base.metadata.create_all(bind=engine)
 
-        # Lightweight migration: ensure new columns exist on existing tables.
-        try:
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        'ALTER TABLE "shift" '
-                        'ADD COLUMN IF NOT EXISTS "CashFloat" NUMERIC(12, 2);'
-                    )
-                )
-        except Exception:
-            logger.exception(
-                "Failed to apply lightweight migrations during database init."
-            )
+        inspector = inspect(engine)
+
+        with engine.begin() as conn:
+            # ------------------------------------------------------------------
+            # Shift: ensure CashFloat exists
+            # ------------------------------------------------------------------
+            try:
+                if inspector.has_table("shift"):
+                    shift_columns = {
+                        col["name"]: col for col in inspector.get_columns("shift")
+                    }
+                    if "CashFloat" not in shift_columns:
+                        conn.execute(
+                            text(
+                                'ALTER TABLE "shift" '
+                                'ADD COLUMN "CashFloat" NUMERIC(15, 2);'
+                            )
+                        )
+                        logger.info("Added missing column shift.CashFloat")
+            except Exception:
+                logger.exception("Failed to ensure shift.CashFloat column exists")
+
+            # ------------------------------------------------------------------
+            # Product: ensure Unit, IsActive, and MinStockLevel type
+            # ------------------------------------------------------------------
+            try:
+                if inspector.has_table("product"):
+                    product_columns = {
+                        col["name"]: col for col in inspector.get_columns("product")
+                    }
+
+                    if "Unit" not in product_columns:
+                        conn.execute(
+                            text(
+                                'ALTER TABLE "product" '
+                                "ADD COLUMN \"Unit\" VARCHAR(20) DEFAULT 'Pcs';"
+                            )
+                        )
+                        logger.info("Added missing column product.Unit")
+
+                    if "IsActive" not in product_columns:
+                        conn.execute(
+                            text(
+                                'ALTER TABLE "product" '
+                                'ADD COLUMN "IsActive" BOOLEAN DEFAULT TRUE;'
+                            )
+                        )
+                        logger.info("Added missing column product.IsActive")
+
+                    min_stock_col = product_columns.get("MinStockLevel")
+                    if min_stock_col is not None:
+                        col_type = min_stock_col.get("type")
+                        # If existing type is Integer, migrate to NUMERIC(12, 2)
+                        if isinstance(col_type, Integer):
+                            conn.execute(
+                                text(
+                                    'ALTER TABLE "product" '
+                                    'ALTER COLUMN "MinStockLevel" '
+                                    'TYPE NUMERIC(12, 2) '
+                                    'USING "MinStockLevel"::numeric;'
+                                )
+                            )
+                            logger.info(
+                                "Migrated product.MinStockLevel from INTEGER to NUMERIC(12, 2)"
+                            )
+            except Exception:
+                logger.exception("Failed to apply product column migrations")
+
+            # ------------------------------------------------------------------
+            # Invoice: ensure Discount column exists
+            # ------------------------------------------------------------------
+            try:
+                if inspector.has_table("invoice"):
+                    invoice_columns = {
+                        col["name"]: col for col in inspector.get_columns("invoice")
+                    }
+                    if "Discount" not in invoice_columns:
+                        conn.execute(
+                            text(
+                                'ALTER TABLE "invoice" '
+                                'ADD COLUMN "Discount" NUMERIC(15, 2) DEFAULT 0;'
+                            )
+                        )
+                        logger.info("Added missing column invoice.Discount")
+            except Exception:
+                logger.exception("Failed to ensure invoice.Discount column exists")
 
         logger.info("Database connection successful; tables created/verified.")
     except SQLAlchemyError:
         logger.exception("Database initialization failed.")
         # Re-raise so the application can fail fast during startup.
+        raise
+    except Exception:
+        logger.exception("Unexpected error during database initialization.")
         raise
 
 

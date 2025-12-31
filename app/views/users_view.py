@@ -67,10 +67,9 @@ class UsersView(QWidget):
     def _setup_table(self) -> None:
         headers = [
             self._translator["users.table.column.id"],
-            self._translator["users.table.column.full_name"],
             self._translator["users.table.column.username"],
             self._translator["users.table.column.role"],
-            self._translator["users.table.column.mobile"],
+            self._translator["users.table.column.full_name"],
             self._translator["users.table.column.status"],
         ]
         self.tblUsers.setColumnCount(len(headers))
@@ -94,15 +93,14 @@ class UsersView(QWidget):
             header.setStretchLastSection(False)
             # Fixed small width for ID and Status
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-            header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
             header.resizeSection(0, 60)
-            header.resizeSection(5, 60)
+            header.resizeSection(4, 80)
             # Stretch important text columns
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Full Name
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Username
-            header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # Mobile
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Username
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # Employee Name
             # Role may size to contents
-            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
 
     def _connect_signals(self) -> None:
         self.txtSearchUser.textChanged.connect(self._on_search_changed)
@@ -140,7 +138,6 @@ class UsersView(QWidget):
             full_name = user.get("full_name", "")
             username = user.get("username", "")
             role = user.get("role", "")
-            mobile = user.get("mobile", "")
             status = user.get("status", "")
 
             id_item = QTableWidgetItem(str(user_id))
@@ -149,21 +146,19 @@ class UsersView(QWidget):
                 Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
             )
 
-            full_name_item = QTableWidgetItem(full_name)
             username_item = QTableWidgetItem(username)
             role_item = QTableWidgetItem(role)
-            mobile_item = QTableWidgetItem(mobile)
+            full_name_item = QTableWidgetItem(full_name)
             status_item = QTableWidgetItem(status)
             status_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
             )
 
             self.tblUsers.setItem(row_index, 0, id_item)
-            self.tblUsers.setItem(row_index, 1, full_name_item)
-            self.tblUsers.setItem(row_index, 2, username_item)
-            self.tblUsers.setItem(row_index, 3, role_item)
-            self.tblUsers.setItem(row_index, 4, mobile_item)
-            self.tblUsers.setItem(row_index, 5, status_item)
+            self.tblUsers.setItem(row_index, 1, username_item)
+            self.tblUsers.setItem(row_index, 2, role_item)
+            self.tblUsers.setItem(row_index, 3, full_name_item)
+            self.tblUsers.setItem(row_index, 4, status_item)
 
     # ------------------------------------------------------------------ #
     # Helpers
