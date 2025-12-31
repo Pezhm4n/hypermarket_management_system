@@ -115,6 +115,18 @@
   "inventory.context.add_stock": "افزودن موجودی",
   "inventory.message.copied": "بارکد در حافظه کپی شد.",
 
+  "inventory.context.record_waste": "ثبت ضایعات",
+  "inventory.waste.dialog_title": "ثبت ضایعات",
+  "inventory.waste.field.quantity": "مقدار",
+  "inventory.waste.field.reason": "علت",
+  "inventory.waste.field.notes": "یادداشت",
+  "inventory.waste.notes_placeholder": "توضیحات اختیاری...",
+  "inventory.waste.reason.breakage": "شکستگی",
+  "inventory.waste.reason.theft": "سرقت",
+  "inventory.waste.reason.expiry": "انقضا",
+  "inventory.waste.reason.other": "سایر",
+  "inventory.waste.info.recorded": "ضایعات با موفقیت ثبت شد.",
+
   "inventory.dialog.restock_title": "افزودن موجودی",
   "inventory.restock.field.quantity": "تعداد / مقدار",
   "inventory.restock.field.buy_price": "قیمت خرید",
