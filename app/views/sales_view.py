@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
 from app.controllers.sales_controller import SalesController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
+from app.views.components.scanner_dialog import ScannerDialog
 from app.views.customers_view import CustomersDialog
 
 logger = logging.getLogger(__name__)
@@ -179,6 +180,7 @@ class SalesView(QWidget):
 
         uic.loadUi("app/views/ui/sales_view.ui", self)
 
+        self._inject_scan_barcode_button()
         self._inject_customer_controls()
         self._inject_return_mode_toggle()
         self._inject_close_shift_button()
@@ -214,6 +216,29 @@ class SalesView(QWidget):
     # ------------------------------------------------------------------ #
     # UI setup
     # ------------------------------------------------------------------ #
+    def _inject_scan_barcode_button(self) -> None:
+        try:
+            top_layout = getattr(self, "horizontalLayout_top", None)
+            if top_layout is None:
+                logger.warning(
+                    "SalesView top layout not found; cannot inject Scan Barcode button."
+                )
+                return
+
+            self.btnScanBarcode = getattr(self, "btnScanBarcode", None)
+            if self.btnScanBarcode is None:
+                self.btnScanBarcode = QPushButton(self)
+                self.btnScanBarcode.setObjectName("btnScanBarcode")
+                self.btnScanBarcode.setText(
+                    self._translator.get(
+                        "sales.button.scan_barcode",
+                        "📷 Scan Barcode",
+                    )
+                )
+                top_layout.addWidget(self.btnScanBarcode)
+        except Exception as e:
+            logger.error("Error in _inject_scan_barcode_button: %s", e, exc_info=True)
+
     def _inject_customer_controls(self) -> None:
         try:
             # These widgets are expected in the .ui, fall back to creating them if missing.
@@ -392,6 +417,13 @@ class SalesView(QWidget):
                         "Select Customer",
                     )
                 )
+            if hasattr(self, "btnScanBarcode"):
+                self.btnScanBarcode.setText(
+                    self._translator.get(
+                        "sales.button.scan_barcode",
+                        "📷 Scan Barcode",
+                    )
+                )
             if hasattr(self, "btnHoldOrder"):
                 self.btnHoldOrder.setText(
                     self._translator.get("sales.button.hold", "Hold Order")
@@ -481,6 +513,8 @@ class SalesView(QWidget):
         self.btnCheckout.clicked.connect(self._on_checkout_clicked)
         if hasattr(self, "btnSelectCustomer"):
             self.btnSelectCustomer.clicked.connect(self._on_select_customer_clicked)
+        if hasattr(self, "btnScanBarcode"):
+            self.btnScanBarcode.clicked.connect(self._on_scan_barcode_clicked)
         if hasattr(self, "btnClearCart"):
             self.btnClearCart.clicked.connect(self._on_clear_cart_clicked)
         if hasattr(self, "btnHoldOrder"):
@@ -531,6 +565,26 @@ class SalesView(QWidget):
         except Exception as e:
             logger.error("Error in _on_select_customer_clicked: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    def _on_scan_barcode_clicked(self) -> None:
+        try:
+            dialog = ScannerDialog(translator=self._translator, parent=self)
+            dialog.barcode_detected.connect(self._on_scanner_barcode_detected)
+            dialog.exec()
+        except Exception as e:
+            logger.error("Error in _on_scan_barcode_clicked: %s", e, exc_info=True)
+            QMessageBox.critical(self, "Error", str(e))
+
+    def _on_scanner_barcode_detected(self, code: str) -> None:
+        try:
+            if not code:
+                return
+            self.txtBarcode.setText(code)
+            self._on_barcode_entered()
+        except Exception as e:
+            logger.error(
+                "Error in _on_scanner_barcode_detected: %s", e, exc_info=True
+            )
 
     def _on_clear_cart_clicked(self) -> None:
         try:

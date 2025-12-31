@@ -4,13 +4,14 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import logging
+import os
 from datetime import date, timedelta, datetime
 import jdatetime
 
 logger = logging.getLogger(__name__)
 from PyQt6 import uic
-from PyQt6.QtCore import Qt, QRegularExpression, QDate
-from PyQt6.QtGui import QRegularExpressionValidator, QColor, QBrush
+from PyQt6.QtCore import Qt, QRegularExpression, QDate, QUrl
+from PyQt6.QtGui import QRegularExpressionValidator, QColor, QBrush, QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -35,7 +36,9 @@ from PyQt6.QtWidgets import (
 )
 
 from app.controllers.inventory_controller import InventoryController
+from app.core.barcode_manager import BarcodeGenerator
 from app.core.translation_manager import TranslationManager
+from app.views.components.scanner_dialog import ScannerDialog
 
 
 class InventoryView(QWidget):
@@ -54,6 +57,7 @@ class InventoryView(QWidget):
 
         self._translator = translation_manager
         self._controller = InventoryController()
+        self._barcode_generator = BarcodeGenerator()
         self._read_only: bool = False
 
         uic.loadUi("app/views/ui/inventory_view.ui", self)
@@ -329,11 +333,16 @@ class InventoryView(QWidget):
         action_copy = menu.addAction(
             self._translator["inventory.context.copy_barcode"]
         )
+        action_generate = menu.addAction(
+            self._translator.get(
+                "inventory.context.generate_barcode",
+                "Generate Barcode",
+            )
+        )
 
         action_edit = None
         action_delete = None
         action_add_stock = None
-        action_waste = None
         if not self._read_only:
             action_edit = menu.addAction(
                 self._translator["inventory.context.edit"]
@@ -343,9 +352,6 @@ class InventoryView(QWidget):
             )
             action_add_stock = menu.addAction(
                 self._translator["inventory.context.add_stock"]
-            )
-            action_waste = menu.addAction(
-                self._translator["inventory.context.record_waste"]
             )
 
         global_pos = self.tblProducts.viewport().mapToGlobal(pos)
@@ -357,8 +363,9 @@ class InventoryView(QWidget):
             self._delete_product(prod_id, name)
         elif chosen_action == action_add_stock:
             self._open_restock_dialog(prod_id, name)
-        elif chosen_action == action_waste:
-            self._open_waste_dialog(prod_id, name)
+        elif chosen_action == action_generate:
+            code_value = barcode or str(prod_id)
+            self._generate_barcode_image(code_value)
         elif chosen_action == action_copy and barcode:
             clipboard = QApplication.clipboard()
             if clipboard is not None:
@@ -459,54 +466,52 @@ class InventoryView(QWidget):
                     details=str(exc)
                 ),
             )
-    
-    def _open_waste_dialog(self, prod_id: int, name: str) -> None:
-        """
-        Open dialog to record waste/damage for a product.
-        """
-        try:
-            dialog = WasteDialog(
-                translator=self._translator,
-                product_label=name,
-                parent=self,
-            )
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
 
-            qty, reason, notes = dialog.get_values()
-            
-            parent = self.parent()
-            user = getattr(parent, "current_user", None) if parent is not None else None
-            emp_id = getattr(user, "EmpID", None) if user is not None else None
-
-            self._controller.record_waste(
-                prod_id=prod_id,
-                quantity=qty,
-                reason=reason,
-                notes=notes,
-                emp_id=emp_id,
-            )
-            
-            QMessageBox.information(
-                self,
-                self._translator["dialog.info_title"],
-                self._translator["inventory.waste.info.recorded"],
-            )
-            self._load_products()
-        except ValueError as exc:
+    def _generate_barcode_image(self, code: str) -> None:
+        """
+        Generate a barcode PNG for the given code and open it with the
+        system's default image viewer.
+        """
+        if not code:
             QMessageBox.warning(
                 self,
-                self._translator["dialog.warning_title"],
-                str(exc),
+                self._translator.get("dialog.warning_title", "Warning"),
+                self._translator.get(
+                    "inventory.dialog.error.no_barcode_for_product",
+                    "This product does not have a barcode or ID to generate.",
+                ),
             )
+            return
+
+        try:
+            app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            barcodes_dir = os.path.join(app_dir, "barcodes")
+            os.makedirs(barcodes_dir, exist_ok=True)
+
+            safe_code = "".join(ch for ch in code if ch.isalnum()) or "barcode"
+            target_path = os.path.join(barcodes_dir, f"{safe_code}.png")
+
+            image_path = self._barcode_generator.generate(code, target_path)
+
+            url = QUrl.fromLocalFile(image_path)
+            if not QDesktopServices.openUrl(url):
+                QMessageBox.information(
+                    self,
+                    self._translator.get("dialog.info_title", "Information"),
+                    self._translator.get(
+                        "inventory.dialog.info.barcode_saved",
+                        "Barcode image saved at: {path}",
+                    ).format(path=image_path),
+                )
         except Exception as exc:
-            logger.exception("Error in _open_waste_dialog: %s", exc)
+            logger.exception("Error generating barcode image: %s", exc)
             QMessageBox.critical(
                 self,
-                self._translator["dialog.error_title"],
-                self._translator["inventory.dialog.error.operation_failed"].format(
-                    details=str(exc)
-                ),
+                self._translator.get("dialog.error_title", "Error"),
+                self._translator.get(
+                    "inventory.dialog.error.barcode_generate_failed",
+                    "Failed to generate barcode image: {details}",
+                ).format(details=str(exc)),
             )
 
 
@@ -632,140 +637,6 @@ class RestockDialog(QDialog):
     def get_values(self) -> tuple[Decimal, Decimal, Optional[date]]:
         return self._quantity, self._buy_price, self._expiry_date
 
-class WasteDialog(QDialog):
-    """
-    Dialog for recording waste/damage/theft adjustments.
-    """
-
-    def __init__(
-        self,
-        translator: TranslationManager,
-        product_label: str,
-        parent: Optional[QWidget] = None,
-    ) -> None:
-        super().__init__(parent)
-        self._translator = translator
-        self._product_label = product_label
-        self._quantity = Decimal("0")
-        self._reason = ""
-        self._notes = ""
-        self._build_ui()
-
-    def _build_ui(self) -> None:
-        """
-        Build the waste recording dialog UI.
-        """
-        self.setModal(True)
-        self.setMinimumWidth(400)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-
-        title = QLabel(self)
-        try:
-            caption = self._translator["inventory.waste.dialog_title"]
-        except Exception:
-            caption = "Record Waste"
-        title.setText(f"{caption} - {self._product_label}")
-        title.setWordWrap(True)
-        layout.addWidget(title)
-
-        form = QFormLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(8)
-
-        self.spinQuantity = QDoubleSpinBox(self)
-        self.spinQuantity.setRange(0.0, 9999999999.0)
-        self.spinQuantity.setDecimals(3)
-        self.spinQuantity.setGroupSeparatorShown(True)
-
-        self.cmbReason = QComboBox(self)
-        self.cmbReason.addItem(
-            self._translator.get("inventory.waste.reason.breakage", "Breakage"),
-            "Breakage",
-        )
-        self.cmbReason.addItem(
-            self._translator.get("inventory.waste.reason.theft", "Theft"),
-            "Theft",
-        )
-        self.cmbReason.addItem(
-            self._translator.get("inventory.waste.reason.expiry", "Expired"),
-            "Expiry",
-        )
-        self.cmbReason.addItem(
-            self._translator.get("inventory.waste.reason.other", "Other"),
-            "Other",
-        )
-
-        self.txtNotes = QLineEdit(self)
-        self.txtNotes.setPlaceholderText(
-            self._translator.get(
-                "inventory.waste.notes_placeholder",
-                "Optional notes...",
-            )
-        )
-
-        form.addRow(
-            self._translator.get("inventory.waste.field.quantity", "Quantity"),
-            self.spinQuantity,
-        )
-        form.addRow(
-            self._translator.get("inventory.waste.field.reason", "Reason"),
-            self.cmbReason,
-        )
-        form.addRow(
-            self._translator.get("inventory.waste.field.notes", "Notes"),
-            self.txtNotes,
-        )
-
-        layout.addLayout(form)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel,
-            parent=self,
-        )
-        layout.addWidget(buttons)
-
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
-
-    def _on_accept(self) -> None:
-        """
-        Validate and accept the dialog.
-        """
-        try:
-            qty_val = self.spinQuantity.value()
-            if qty_val <= 0:
-                QMessageBox.warning(
-                    self,
-                    self._translator["dialog.warning_title"],
-                    self._translator.get(
-                        "inventory.dialog.error.invalid_quantity",
-                        "Quantity must be greater than zero.",
-                    ),
-                )
-                return
-
-            self._quantity = Decimal(str(qty_val))
-            self._reason = self.cmbReason.currentData() or "Other"
-            self._notes = self.txtNotes.text().strip()
-
-            self.accept()
-        except Exception as exc:
-            logger.exception("Error in WasteDialog._on_accept: %s", exc)
-            QMessageBox.critical(
-                self,
-                self._translator["dialog.error_title"],
-                str(exc),
-            )
-
-    def get_values(self) -> tuple[Decimal, str, str]:
-        """
-        Return the entered values.
-        """
-        return self._quantity, self._reason, self._notes
 
 class ProductDialog(QDialog):
     """
@@ -820,6 +691,7 @@ class ProductDialog(QDialog):
 
         self.txtName = QLineEdit(self)
         self.txtBarcode = QLineEdit(self)
+        self.btnScanBarcode = QPushButton(self)
         self.cmbCategory = QComboBox(self)
 
         self.spinBasePrice = QDoubleSpinBox(self)
@@ -887,10 +759,31 @@ class ProductDialog(QDialog):
             self._translator["inventory.dialog.field.name"],
             self.txtName,
         )
+
+        # Barcode row with inline scan button
+        barcode_row = QHBoxLayout()
+        barcode_row.setContentsMargins(0, 0, 0, 0)
+        barcode_row.setSpacing(4)
+        barcode_row.addWidget(self.txtBarcode)
+
+        self.btnScanBarcode.setText("📷")
+        self.btnScanBarcode.setFixedWidth(36)
+        self.btnScanBarcode.setToolTip(
+            self._translator.get(
+                "inventory.dialog.button.scan",
+                "Scan barcode",
+            )
+        )
+        barcode_row.addWidget(self.btnScanBarcode)
+
+        barcode_container = QWidget(self)
+        barcode_container.setLayout(barcode_row)
+
         form_layout.addRow(
             self._translator["inventory.dialog.field.barcode"],
-            self.txtBarcode,
+            barcode_container,
         )
+
         form_layout.addRow(
             self._translator["inventory.dialog.field.category"],
             self.cmbCategory,
@@ -947,7 +840,7 @@ class ProductDialog(QDialog):
 
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnCancel.clicked.connect(self.reject)
-
+        self.btnScanBarcode.clicked.connect(self._on_scan_clicked)
         self.chkPerishable.stateChanged.connect(self._on_perishable_changed)
 
     def _toggle_batch_fields(self, visible: bool) -> None:
@@ -1041,6 +934,13 @@ class ProductDialog(QDialog):
             self.lblTitle.setText(self._translator["inventory.dialog.add_title"])
         self.btnSave.setText(self._translator["inventory.dialog.button.save"])
         self.btnCancel.setText(self._translator["inventory.dialog.button.cancel"])
+        if hasattr(self, "btnScanBarcode"):
+            self.btnScanBarcode.setToolTip(
+                self._translator.get(
+                    "inventory.dialog.button.scan",
+                    "Scan barcode",
+                )
+            )
 
     def _on_perishable_changed(self, state: int) -> None:
         """
@@ -1055,6 +955,32 @@ class ProductDialog(QDialog):
                 self.dateExpiry.setText(jalali_today.strftime("%Y/%m/%d"))
         else:
             self.dateExpiry.clear()
+
+    def _on_scan_clicked(self) -> None:
+        """
+        Open the ScannerDialog and fill the barcode field with the result.
+        """
+        try:
+            dialog = ScannerDialog(translator=self._translator, parent=self)
+            dialog.barcode_detected.connect(self._on_scanner_barcode_detected)
+            dialog.exec()
+        except Exception as exc:
+            logger.exception("Error in ProductDialog._on_scan_clicked: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator.get("dialog.error_title", "Error"),
+                str(exc),
+            )
+
+    def _on_scanner_barcode_detected(self, code: str) -> None:
+        try:
+            if not code:
+                return
+            self.txtBarcode.setText(code)
+        except Exception as exc:
+            logger.exception(
+                "Error in ProductDialog._on_scanner_barcode_detected: %s", exc
+            )
 
     def _on_save_clicked(self) -> None:
         """

@@ -114,18 +114,6 @@
   "inventory.context.add_stock": "Add Stock",
   "inventory.message.copied": "Barcode copied to clipboard.",
 
-  "inventory.context.record_waste": "Record Waste",
-  "inventory.waste.dialog_title": "Record Waste",
-  "inventory.waste.field.quantity": "Quantity",
-  "inventory.waste.field.reason": "Reason",
-  "inventory.waste.field.notes": "Notes",
-  "inventory.waste.notes_placeholder": "Optional notes...",
-  "inventory.waste.reason.breakage": "Breakage",
-  "inventory.waste.reason.theft": "Theft",
-  "inventory.waste.reason.expiry": "Expired",
-  "inventory.waste.reason.other": "Other",
-  "inventory.waste.info.recorded": "Waste recorded successfully.",
-
   "inventory.dialog.restock_title": "Add Stock",
 
   "settings.page_title": "Settings",
