@@ -124,14 +124,22 @@ class InventoryView(QWidget):
 
     def _load_products(self) -> None:
         """
-        Load products from the database and populate the table.
+        Load products from the database and populate the table with visual alerts.
+        Highlights:
+        - Red background for low stock (TotalStock < MinStock)
         """
+        from datetime import date, timedelta
+        from PyQt6.QtGui import QColor, QBrush
+        
         search_text = self.txtSearchProduct.text().strip()
         products: List[Dict[str, Any]] = self._controller.list_products(
             search_text or None
         )
 
         self.tblProducts.setRowCount(0)
+
+        today = date.today()
+        warning_date = today + timedelta(days=10)
 
         for row_index, product in enumerate(products):
             self.tblProducts.insertRow(row_index)
@@ -143,6 +151,8 @@ class InventoryView(QWidget):
             base_price = product.get("base_price", Decimal("0"))
             total_stock = product.get("total_stock", Decimal("0"))
             min_stock = product.get("min_stock", 0)
+
+            is_low_stock = float(total_stock) < min_stock
 
             id_item = QTableWidgetItem(str(prod_id))
             id_item.setData(Qt.ItemDataRole.UserRole, int(prod_id))
@@ -170,6 +180,18 @@ class InventoryView(QWidget):
             min_stock_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
             )
+
+            if is_low_stock:
+                low_stock_color = QColor(255, 100, 100, 100)
+                low_stock_brush = QBrush(low_stock_color)
+                
+                id_item.setBackground(low_stock_brush)
+                name_item.setBackground(low_stock_brush)
+                barcode_item.setBackground(low_stock_brush)
+                category_item.setBackground(low_stock_brush)
+                base_price_item.setBackground(low_stock_brush)
+                total_stock_item.setBackground(low_stock_brush)
+                min_stock_item.setBackground(low_stock_brush)
 
             self.tblProducts.setItem(row_index, 0, id_item)
             self.tblProducts.setItem(row_index, 1, name_item)
@@ -297,6 +319,9 @@ class InventoryView(QWidget):
             )
 
     def _edit_product(self, prod_id: int) -> None:
+        """
+        Open edit dialog for the selected product.
+        """
         product = self._controller.get_product(prod_id)
         if not product:
             QMessageBox.warning(
@@ -317,6 +342,9 @@ class InventoryView(QWidget):
             self._load_products()
 
     def _delete_product(self, prod_id: int, label: str) -> None:
+        """
+        Soft-delete the selected product after confirmation.
+        """
         if not label:
             label = str(prod_id)
 
@@ -347,7 +375,8 @@ class InventoryView(QWidget):
 
 class ProductDialog(QDialog):
     """
-    Dialog for creating or editing a product with initial inventory batch.
+    Dialog for creating or editing a product.
+    In edit mode, batch-related fields are hidden.
     """
 
     def __init__(
@@ -389,10 +418,10 @@ class ProductDialog(QDialog):
         self.lblTitle = QLabel(self)
         layout.addWidget(self.lblTitle)
 
-        form_layout = QFormLayout()
-        form_layout.setHorizontalSpacing(12)
-        form_layout.setVerticalSpacing(8)
-        form_layout.setFieldGrowthPolicy(
+        self.form_layout = QFormLayout()
+        self.form_layout.setHorizontalSpacing(12)
+        self.form_layout.setVerticalSpacing(8)
+        self.form_layout.setFieldGrowthPolicy(
             QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
         )
 
@@ -433,44 +462,44 @@ class ProductDialog(QDialog):
             QRegularExpressionValidator(barcode_regex, self)
         )
 
-        form_layout.addRow(
+        self.form_layout.addRow(
             self._translator["inventory.dialog.field.name"],
             self.txtName,
         )
-        form_layout.addRow(
+        self.form_layout.addRow(
             self._translator["inventory.dialog.field.barcode"],
             self.txtBarcode,
         )
-        form_layout.addRow(
+        self.form_layout.addRow(
             self._translator["inventory.dialog.field.category"],
             self.cmbCategory,
         )
-        form_layout.addRow(
+        self.form_layout.addRow(
             self._translator["inventory.dialog.field.base_price"],
             self.spinBasePrice,
         )
-        form_layout.addRow(
+        self.form_layout.addRow(
             self._translator["inventory.dialog.field.min_stock"],
             self.spinMinStock,
         )
-        form_layout.addRow(
+        self.form_layout.addRow(
             self._translator["inventory.dialog.field.is_perishable"],
             self.chkPerishable,
         )
-        form_layout.addRow(
-            self._translator["inventory.dialog.field.initial_quantity"],
-            self.spinInitialQty,
-        )
-        form_layout.addRow(
-            self._translator["inventory.dialog.field.buy_price"],
-            self.spinBuyPrice,
-        )
-        form_layout.addRow(
-            self._translator["inventory.dialog.field.expiry_date"],
-            self.dateExpiry,
-        )
+        
+        self.row_initial_qty = self.form_layout.rowCount()
+        self.lblInitialQty = QLabel(self._translator["inventory.dialog.field.initial_quantity"])
+        self.form_layout.addRow(self.lblInitialQty, self.spinInitialQty)
+        
+        self.row_buy_price = self.form_layout.rowCount()
+        self.lblBuyPrice = QLabel(self._translator["inventory.dialog.field.buy_price"])
+        self.form_layout.addRow(self.lblBuyPrice, self.spinBuyPrice)
+        
+        self.row_expiry = self.form_layout.rowCount()
+        self.lblExpiry = QLabel(self._translator["inventory.dialog.field.expiry_date"])
+        self.form_layout.addRow(self.lblExpiry, self.dateExpiry)
 
-        layout.addLayout(form_layout)
+        layout.addLayout(self.form_layout)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -488,12 +517,28 @@ class ProductDialog(QDialog):
 
         self.chkPerishable.stateChanged.connect(self._on_perishable_changed)
 
+    def _toggle_batch_fields(self, visible: bool) -> None:
+        """
+        Show or hide batch-related fields.
+        These fields are only needed when creating a new product.
+        """
+        self.lblInitialQty.setVisible(visible)
+        self.spinInitialQty.setVisible(visible)
+        
+        self.lblBuyPrice.setVisible(visible)
+        self.spinBuyPrice.setVisible(visible)
+        
+        self.lblExpiry.setVisible(visible)
+        self.dateExpiry.setVisible(visible)
+
     def _load_from_product(self) -> None:
         """
         Populate fields when editing an existing product.
         """
         if not self._is_edit_mode or not self._product_data:
             return
+
+        self._toggle_batch_fields(False)
 
         self.lblTitle.setText(self._translator["inventory.dialog.edit_title"])
 
@@ -559,7 +604,7 @@ class ProductDialog(QDialog):
 
     def _on_save_clicked(self) -> None:
         """
-        Validate input and create the product.
+        Validate input and save the product.
         """
         name = self.txtName.text().strip()
         barcode = self.txtBarcode.text().strip()

@@ -126,6 +126,7 @@ class InventoryController:
                 )
                 .join(Category, Product.CatID == Category.CatID)
                 .outerjoin(InventoryBatch, InventoryBatch.ProdID == Product.ProdID)
+                .filter(Product.IsActive == True)
                 .group_by(
                     Product.ProdID,
                     Product.Name,
@@ -252,6 +253,7 @@ class InventoryController:
                     BasePrice=base_price_dec,
                     MinStockLevel=min_stock,
                     IsPerishable=is_perishable,
+                    IsActive=True,
                     CatID=category.CatID,
                 )
                 session.add(product)
@@ -337,8 +339,8 @@ class InventoryController:
 
     def delete_product(self, prod_id: int) -> None:
         """
-        Delete a product and all related inventory batches.
-        Note: This is a hard delete. Use with caution.
+        Soft-delete a product by setting IsActive to False.
+        This preserves historical invoice references.
         """
         with self._get_session() as session:
             with session.begin():
@@ -346,14 +348,10 @@ class InventoryController:
                 if product is None:
                     return
 
-                session.query(InventoryBatch).filter(
-                    InventoryBatch.ProdID == prod_id
-                ).delete()
-
-                session.delete(product)
+                product.IsActive = False
 
                 logger.info(
-                    "Deleted product '%s' (Barcode=%s, ProdID=%s)",
+                    "Soft-deleted product '%s' (Barcode=%s, ProdID=%s)",
                     product.Name,
                     product.Barcode,
                     prod_id,

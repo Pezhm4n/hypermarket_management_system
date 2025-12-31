@@ -191,6 +191,7 @@ class Product(Base):
     BasePrice = Column(Numeric(12, 2))
     MinStockLevel = Column(Integer)
     IsPerishable = Column(Boolean, server_default=text("false"))
+    IsActive = Column(Boolean, server_default=text("true"))
     CatID = Column(
         Integer,
         ForeignKey("category.CatID"),
