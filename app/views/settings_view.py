@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from typing import Optional
 
+import json
 import logging
 import re
+import shutil
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFileDialog,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -16,13 +21,14 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from qt_material import apply_stylesheet
 
-from app.config import CONFIG
+from app.config import CONFIG, ROOT_DIR
 from app.controllers.auth_controller import AuthController
 from app.controllers.user_controller import UserController
 from app.core.translation_manager import TranslationManager
@@ -50,25 +56,40 @@ class SettingsView(QWidget):
         self._current_user: Optional[UserAccount] = None
         self._user_controller = UserController()
         self._profile_data: Optional[dict] = None
+        self._store_config_path: Path = ROOT_DIR / "config.json"
+        self._store_config: dict = {}
+        self._db_path: Path = ROOT_DIR / "hypermarket.db"
 
         self._build_ui()
         self._connect_signals()
 
         self._translator.language_changed.connect(self._on_language_changed)
         self._apply_translations()
+        self._load_store_settings()
 
     # ------------------------------------------------------------------ #
     # UI construction
     # ------------------------------------------------------------------ #
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+        root_layout.addWidget(scroll_area)
+
+        container = QWidget(scroll_area)
+        scroll_area.setWidget(container)
+
+        layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(20)
 
         # -----------------------------
         # User Profile card
         # -----------------------------
-        self.grpProfile = QGroupBox(self)
+        self.grpProfile = QGroupBox(container)
         self.grpProfile.setObjectName("settingsProfileGroupBox")
         profile_outer_layout = QVBoxLayout(self.grpProfile)
         profile_outer_layout.setContentsMargins(16, 16, 16, 16)
@@ -131,7 +152,7 @@ class SettingsView(QWidget):
         # -----------------------------
         # Security / Password card
         # -----------------------------
-        self.grpSecurity = QGroupBox(self)
+        self.grpSecurity = QGroupBox(container)
         self.grpSecurity.setObjectName("settingsSecurityGroupBox")
         security_outer_layout = QVBoxLayout(self.grpSecurity)
         security_outer_layout.setContentsMargins(16, 16, 16, 16)
@@ -180,7 +201,7 @@ class SettingsView(QWidget):
         # -----------------------------
         # Appearance card
         # -----------------------------
-        self.grpAppearance = QGroupBox(self)
+        self.grpAppearance = QGroupBox(container)
         self.grpAppearance.setObjectName("settingsAppearanceGroupBox")
         appearance_outer_layout = QVBoxLayout(self.grpAppearance)
         appearance_outer_layout.setContentsMargins(16, 16, 16, 16)
@@ -214,6 +235,72 @@ class SettingsView(QWidget):
 
         layout.addWidget(self.grpAppearance)
 
+        # -----------------------------
+        # Store information card
+        # -----------------------------
+        self.grpStore = QGroupBox(container)
+        self.grpStore.setObjectName("settingsStoreGroupBox")
+        store_outer_layout = QVBoxLayout(self.grpStore)
+        store_outer_layout.setContentsMargins(16, 16, 16, 16)
+        store_outer_layout.setSpacing(12)
+
+        store_grid = QGridLayout()
+        store_grid.setHorizontalSpacing(16)
+        store_grid.setVerticalSpacing(12)
+
+        self.lblStoreName = QLabel(self.grpStore)
+        self.txtStoreName = QLineEdit(self.grpStore)
+
+        self.lblStoreAddress = QLabel(self.grpStore)
+        self.txtStoreAddress = QLineEdit(self.grpStore)
+
+        self.lblStorePhone = QLabel(self.grpStore)
+        self.txtStorePhone = QLineEdit(self.grpStore)
+
+        store_grid.addWidget(self.lblStoreName, 0, 0)
+        store_grid.addWidget(self.txtStoreName, 0, 1)
+
+        store_grid.addWidget(self.lblStoreAddress, 1, 0)
+        store_grid.addWidget(self.txtStoreAddress, 1, 1)
+
+        store_grid.addWidget(self.lblStorePhone, 2, 0)
+        store_grid.addWidget(self.txtStorePhone, 2, 1)
+
+        store_grid.setColumnStretch(1, 1)
+
+        store_outer_layout.addLayout(store_grid)
+
+        self.btnSaveStore = QPushButton(self.grpStore)
+        store_actions = QHBoxLayout()
+        store_actions.addStretch()
+        store_actions.addWidget(self.btnSaveStore)
+        store_outer_layout.addLayout(store_actions)
+
+        layout.addWidget(self.grpStore)
+
+        # -----------------------------
+        # Database management card
+        # -----------------------------
+        self.grpDatabase = QGroupBox(container)
+        self.grpDatabase.setObjectName("settingsDatabaseGroupBox")
+        db_outer_layout = QVBoxLayout(self.grpDatabase)
+        db_outer_layout.setContentsMargins(16, 16, 16, 16)
+        db_outer_layout.setSpacing(12)
+
+        db_buttons_layout = QHBoxLayout()
+        db_buttons_layout.setSpacing(12)
+
+        self.btnBackupDatabase = QPushButton(self.grpDatabase)
+        self.btnRestoreDatabase = QPushButton(self.grpDatabase)
+
+        db_buttons_layout.addWidget(self.btnBackupDatabase)
+        db_buttons_layout.addWidget(self.btnRestoreDatabase)
+        db_buttons_layout.addStretch()
+
+        db_outer_layout.addLayout(db_buttons_layout)
+
+        layout.addWidget(self.grpDatabase)
+
         layout.addStretch()
 
         # Initial options (texts will be overridden by translations)
@@ -237,6 +324,9 @@ class SettingsView(QWidget):
     def _connect_signals(self) -> None:
         self.btnSaveProfile.clicked.connect(self._on_save_profile_clicked)
         self.btnSavePassword.clicked.connect(self._on_save_password_clicked)
+        self.btnSaveStore.clicked.connect(self._on_save_store_clicked)
+        self.btnBackupDatabase.clicked.connect(self._on_backup_database_clicked)
+        self.btnRestoreDatabase.clicked.connect(self._on_restore_database_clicked)
         self.cmbTheme.currentIndexChanged.connect(self._on_theme_changed)
         self.cmbFontScale.currentIndexChanged.connect(self._on_font_scale_changed)
 
@@ -247,7 +337,8 @@ class SettingsView(QWidget):
         """
         Attach the currently logged-in user to this view.
 
-        The user is required for change-password operations.
+        The user is required for change-password operations and also
+        controls permissions for store/database settings (admin-only).
         """
         try:
             self._current_user = user
@@ -257,6 +348,7 @@ class SettingsView(QWidget):
                 getattr(user, "Username", None),
             )
             self._load_profile()
+            self._apply_permissions()
         except Exception as e:
             logger.error("Error in set_current_user: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
@@ -361,9 +453,94 @@ class SettingsView(QWidget):
             if 0 <= current_scale < self.cmbFontScale.count():
                 self.cmbFontScale.setCurrentIndex(current_scale)
             self.cmbFontScale.blockSignals(False)
+
+            # Store information section
+            if hasattr(self, "grpStore"):
+                self.grpStore.setTitle(
+                    self._translator.get(
+                        "settings.store.title",
+                        "Store information",
+                    )
+                )
+            if hasattr(self, "lblStoreName"):
+                self.lblStoreName.setText(
+                    self._translator.get(
+                        "settings.store.field.name",
+                        "Store name",
+                    )
+                )
+            if hasattr(self, "lblStoreAddress"):
+                self.lblStoreAddress.setText(
+                    self._translator.get(
+                        "settings.store.field.address",
+                        "Address",
+                    )
+                )
+            if hasattr(self, "lblStorePhone"):
+                self.lblStorePhone.setText(
+                    self._translator.get(
+                        "settings.store.field.phone",
+                        "Phone",
+                    )
+                )
+            if hasattr(self, "btnSaveStore"):
+                self.btnSaveStore.setText(
+                    self._translator.get(
+                        "settings.store.button.save",
+                        "Save",
+                    )
+                )
+
+            # Database section
+            if hasattr(self, "grpDatabase"):
+                self.grpDatabase.setTitle(
+                    self._translator.get(
+                        "settings.database.title",
+                        "Database",
+                    )
+                )
+            if hasattr(self, "btnBackupDatabase"):
+                self.btnBackupDatabase.setText(
+                    self._translator.get(
+                        "settings.database.button.backup",
+                        "Backup",
+                    )
+                )
+            if hasattr(self, "btnRestoreDatabase"):
+                self.btnRestoreDatabase.setText(
+                    self._translator.get(
+                        "settings.database.button.restore",
+                        "Restore",
+                    )
+                )
         except Exception as e:
             logger.error("Error in _apply_translations: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    def _apply_permissions(self) -> None:
+        try:
+            is_admin = False
+            if self._current_user is not None:
+                # Prefer the transient Role attribute attached at login time
+                role_title = getattr(self._current_user, "Role", None)
+                if not role_title and getattr(self._current_user, "Username", "").lower() == "admin":
+                    # Fallback for legacy/default admin without explicit role row
+                    role_title = "Admin"
+                normalized = (role_title or "").strip().lower()
+                is_admin = normalized == "admin"
+
+            # Only admin can manage store info and database
+            for widget in (
+                getattr(self, "grpStore", None),
+                getattr(self, "btnSaveStore", None),
+                getattr(self, "grpDatabase", None),
+                getattr(self, "btnBackupDatabase", None),
+                getattr(self, "btnRestoreDatabase", None),
+            ):
+                if widget is not None:
+                    widget.setEnabled(is_admin)
+        except Exception as e:
+            logger.error("Error in _apply_permissions: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------ #
     # Theme / font handling
@@ -430,6 +607,67 @@ class SettingsView(QWidget):
         except Exception as e:
             logger.error("Error in _on_font_scale_changed: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    # ------------------------------------------------------------------ #
+    # Store settings
+    # ------------------------------------------------------------------ #
+    def _load_store_settings(self) -> None:
+        try:
+            if not self._store_config_path:
+                return
+
+            if self._store_config_path.is_file():
+                with self._store_config_path.open(encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, dict):
+                    self._store_config = data
+                else:
+                    self._store_config = {}
+            else:
+                self._store_config = {}
+
+            store_data = self._store_config.get("store", {})
+            if not isinstance(store_data, dict):
+                store_data = {}
+
+            self.txtStoreName.setText(str(store_data.get("name", "")))
+            self.txtStoreAddress.setText(str(store_data.get("address", "")))
+            self.txtStorePhone.setText(str(store_data.get("phone", "")))
+        except Exception as e:
+            logger.error("Error in _load_store_settings: %s", e, exc_info=True)
+            QMessageBox.critical(self, self._translator["dialog.error_title"], str(e))
+
+    def _on_save_store_clicked(self) -> None:
+        try:
+            if not isinstance(self._store_config, dict):
+                self._store_config = {}
+
+            store_data = self._store_config.get("store")
+            if not isinstance(store_data, dict):
+                store_data = {}
+                self._store_config["store"] = store_data
+
+            store_data["name"] = self.txtStoreName.text().strip()
+            store_data["address"] = self.txtStoreAddress.text().strip()
+            store_data["phone"] = self.txtStorePhone.text().strip()
+
+            tmp_path = self._store_config_path.with_suffix(".tmp")
+            self._store_config_path.parent.mkdir(parents=True, exist_ok=True)
+            with tmp_path.open("w", encoding="utf-8") as fh:
+                json.dump(self._store_config, fh, ensure_ascii=False, indent=2)
+            tmp_path.replace(self._store_config_path)
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator.get(
+                    "settings.store.info.saved",
+                    "Store information saved successfully.",
+                ),
+            )
+        except Exception as e:
+            logger.error("Error in _on_save_store_clicked: %s", e, exc_info=True)
+            QMessageBox.critical(self, self._translator["dialog.error_title"], str(e))
 
     # ------------------------------------------------------------------ #
     # Profile update
@@ -541,6 +779,175 @@ class SettingsView(QWidget):
         except Exception as e:
             logger.error("Error in _on_save_profile_clicked: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    # ------------------------------------------------------------------ #
+    # Database backup / restore
+    # ------------------------------------------------------------------ #
+    def _on_backup_database_clicked(self) -> None:
+        try:
+            if not self._db_path.is_file():
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    self._translator.get(
+                        "settings.database.error.db_missing",
+                        "Database file could not be found.",
+                    ),
+                )
+                return
+
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                self._translator.get(
+                    "settings.database.backup.dialog_title",
+                    "Backup database",
+                ),
+                "hypermarket_backup.db",
+                "Database Files (*.db);;All Files (*.*)",
+            )
+            if not filename:
+                return
+
+            try:
+                shutil.copy2(self._db_path, filename)
+            except PermissionError as exc:
+                logger.error(
+                    "Permission error while creating database backup: %s",
+                    exc,
+                    exc_info=True,
+                )
+                QMessageBox.critical(
+                    self,
+                    self._translator["dialog.error_title"],
+                    self._translator.get(
+                        "settings.database.error.permission_backup",
+                        "Permission denied while creating the backup. Please choose another location or run the application with sufficient permissions.",
+                    ),
+                )
+                return
+            except Exception as exc:
+                logger.error(
+                    "Unexpected error while creating database backup: %s",
+                    exc,
+                    exc_info=True,
+                )
+                QMessageBox.critical(
+                    self,
+                    self._translator["dialog.error_title"],
+                    str(exc),
+                )
+                return
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator.get(
+                    "settings.database.backup.success",
+                    "Database backup created successfully.",
+                ),
+            )
+        except Exception as e:
+            logger.error("Error in _on_backup_database_clicked: %s", e, exc_info=True)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(e),
+            )
+
+    def _on_restore_database_clicked(self) -> None:
+        try:
+            filename, _ = QFileDialog.getOpenFileName(
+                self,
+                self._translator.get(
+                    "settings.database.restore.dialog_title",
+                    "Restore database",
+                ),
+                "",
+                "Database Files (*.db);;All Files (*.*)",
+            )
+            if not filename:
+                return
+
+            warning_text = self._translator.get(
+                "settings.database.restore.warning",
+                "This will overwrite current data and restart the app.",
+            )
+            confirm = QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                warning_text,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            source_path = Path(filename)
+            if not source_path.is_file():
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    self._translator.get(
+                        "settings.database.error.restore_missing",
+                        "Selected backup file does not exist.",
+                    ),
+                )
+                return
+
+            try:
+                self._db_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_path, self._db_path)
+            except PermissionError as exc:
+                logger.error(
+                    "Permission error while restoring database: %s",
+                    exc,
+                    exc_info=True,
+                )
+                QMessageBox.critical(
+                    self,
+                    self._translator["dialog.error_title"],
+                    self._translator.get(
+                        "settings.database.error.permission_restore",
+                        "Permission denied while restoring the database. Please close any applications using the file and try again.",
+                    ),
+                )
+                return
+            except Exception as exc:
+                logger.error(
+                    "Unexpected error while restoring database: %s",
+                    exc,
+                    exc_info=True,
+                )
+                QMessageBox.critical(
+                    self,
+                    self._translator["dialog.error_title"],
+                    str(exc),
+                )
+                return
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator.get(
+                    "settings.database.restore.success",
+                    "Database restored successfully. The application will now close.",
+                ),
+            )
+
+            app = QApplication.instance()
+            if app is not None:
+                app.quit()
+        except Exception as e:
+            logger.error(
+                "Error in _on_restore_database_clicked: %s",
+                e,
+                exc_info=True,
+            )
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(e),
+            )
 
     # ------------------------------------------------------------------ #
     # Slots

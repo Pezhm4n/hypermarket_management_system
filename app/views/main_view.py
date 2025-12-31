@@ -29,6 +29,7 @@ from app.controllers.sales_controller import SalesController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
 from app.views.inventory_view import InventoryView
+from app.views.reports_view import ReportsView
 from app.views.sales_view import SalesView
 from app.views.settings_view import SettingsView
 from app.views.users_view import UsersView
@@ -328,10 +329,14 @@ class MainView(QMainWindow):
 
         self._dashboard_page = dashboard_page
 
-        # Sales / Inventory modules
+        # Sales / Inventory / Reports / Settings modules
         self.sales_view = SalesView(self._translator, parent=self.stacked_widget)
         self.inventory_view = InventoryView(
             self._translator,
+            parent=self.stacked_widget,
+        )
+        self.reports_view = ReportsView(
+            translation_manager=self._translator,
             parent=self.stacked_widget,
         )
         self.settings_view = SettingsView(
@@ -339,14 +344,6 @@ class MainView(QMainWindow):
             translation_manager=self._translator,
             parent=self.stacked_widget,
         )
-
-        reports_page = QWidget(self.stacked_widget)
-        reports_layout = QVBoxLayout(reports_page)
-        reports_layout.setContentsMargins(0, 0, 0, 0)
-        reports_layout.setSpacing(0)
-        self._reports_label = QLabel(reports_page)
-        self._reports_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        reports_layout.addWidget(self._reports_label)
 
         # Users module view
         self.users_view = UsersView(
@@ -362,7 +359,7 @@ class MainView(QMainWindow):
         self._page_indices["inventory"] = self.stacked_widget.addWidget(
             self.inventory_view
         )
-        self._page_indices["reports"] = self.stacked_widget.addWidget(reports_page)
+        self._page_indices["reports"] = self.stacked_widget.addWidget(self.reports_view)
         self._page_indices["users"] = self.stacked_widget.addWidget(self.users_view)
         self._page_indices["settings"] = self.stacked_widget.addWidget(
             self.settings_view
@@ -434,9 +431,6 @@ class MainView(QMainWindow):
         else:
             self.lblCurrentUser.setText("")
 
-        # Static page labels
-        self._reports_label.setText(self._translator["main.section.reports"])
-
         # Dashboard KPI titles
         if hasattr(self, "_kpi_sales_title"):
             self._kpi_sales_title.setText(
@@ -499,6 +493,18 @@ class MainView(QMainWindow):
             except Exception as e:
                 logger.error(
                     "Error refreshing InventoryView when switching page: %s",
+                    e,
+                    exc_info=True,
+                )
+        elif page_key == "reports":
+            try:
+                if hasattr(self, "reports_view") and hasattr(
+                    self.reports_view, "_generate_report"
+                ):
+                    self.reports_view._generate_report()
+            except Exception as e:
+                logger.error(
+                    "Error refreshing ReportsView when switching page: %s",
                     e,
                     exc_info=True,
                 )
@@ -604,9 +610,10 @@ class MainView(QMainWindow):
 
         # Role-specific visibility
         if normalized_role == "cashier":
-            # Cashier: Dashboard + Sales + Inventory
+            # Cashier: Dashboard + Sales + Inventory + Settings
+            allowed_keys = {"dashboard", "sales", "inventory", "settings"}
             for key, btn in self._nav_buttons:
-                if key not in {"dashboard", "sales", "inventory"}:
+                if key not in allowed_keys:
                     btn.setVisible(False)
                     btn.setEnabled(False)
             # Inventory is read-only for cashiers
@@ -619,9 +626,10 @@ class MainView(QMainWindow):
                 logger.error("Error applying read-only mode for InventoryView: %s", e, exc_info=True)
             self._switch_page("sales")
         elif normalized_role == "warehouse":
-            # Warehouse: Inventory only
+            # Warehouse: Inventory + Settings
+            allowed_keys = {"inventory", "settings"}
             for key, btn in self._nav_buttons:
-                if key != "inventory":
+                if key not in allowed_keys:
                     btn.setVisible(False)
                     btn.setEnabled(False)
             try:
