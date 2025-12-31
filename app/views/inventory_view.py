@@ -426,6 +426,7 @@ class InventoryView(QWidget):
         action_edit = None
         action_delete = None
         action_add_stock = None
+        action_waste = None
         if not self._read_only:
             action_edit = menu.addAction(
                 self._translator["inventory.context.edit"]
@@ -435,6 +436,12 @@ class InventoryView(QWidget):
             )
             action_add_stock = menu.addAction(
                 self._translator["inventory.context.add_stock"]
+            )
+            action_waste = menu.addAction(
+                self._translator.get(
+                    "inventory.context.record_waste",
+                    "Record Waste",
+                )
             )
 
         global_pos = self.tblProducts.viewport().mapToGlobal(pos)
@@ -446,6 +453,8 @@ class InventoryView(QWidget):
             self._delete_product(prod_id, name)
         elif chosen_action == action_add_stock:
             self._open_restock_dialog(prod_id, name)
+        elif chosen_action == action_waste:
+            self._open_waste_dialog(prod_id, name)
         elif chosen_action == action_generate:
             code_value = barcode or str(prod_id)
             self._generate_barcode_image(code_value)
@@ -542,6 +551,69 @@ class InventoryView(QWidget):
             self._load_products()
         except Exception as exc:
             logger.exception("Error in _open_restock_dialog: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                self._translator["inventory.dialog.error.operation_failed"].format(
+                    details=str(exc)
+                ),
+            )
+
+    def _open_waste_dialog(self, prod_id: int, name: str) -> None:
+        """
+        Open dialog to record waste/damage for a product.
+        """
+        try:
+            product = self._controller.get_product(prod_id)
+            max_qty: Optional[Decimal] = None
+            if product is not None:
+                try:
+                    max_qty = Decimal(
+                        str(product.get("total_stock", Decimal("0")) or "0")
+                    )
+                except Exception:
+                    max_qty = None
+
+            dialog = WasteDialog(
+                translator=self._translator,
+                product_label=name,
+                max_quantity=max_qty,
+                parent=self,
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            qty, reason, notes = dialog.get_values()
+
+            window = self.window()
+            user = getattr(window, "current_user", None) if window is not None else None
+            emp_id = getattr(user, "EmpID", None) if user is not None else None
+
+            self._controller.record_waste(
+                prod_id=prod_id,
+                quantity=qty,
+                reason=reason,
+                notes=notes,
+                emp_id=emp_id,
+            )
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator.get(
+                    "inventory.waste.info.recorded",
+                    "Waste recorded successfully.",
+                ),
+            )
+            self._load_products()
+        except ValueError as exc:
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                str(exc),
+            )
+        except Exception as exc:
+            logger.exception("Error in _open_waste_dialog: %s", exc)
             QMessageBox.critical(
                 self,
                 self._translator["dialog.error_title"],
@@ -719,6 +791,152 @@ class RestockDialog(QDialog):
 
     def get_values(self) -> tuple[Decimal, Decimal, Optional[date]]:
         return self._quantity, self._buy_price, self._expiry_date
+
+
+class WasteDialog(QDialog):
+    """
+    Dialog for recording waste/damage/theft adjustments.
+    """
+
+    def __init__(
+        self,
+        translator: TranslationManager,
+        product_label: str,
+        max_quantity: Optional[Decimal] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self._product_label = product_label
+        self._max_quantity = max_quantity
+        self._quantity = Decimal("0")
+        self._reason = ""
+        self._notes = ""
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        """
+        Build the waste recording dialog UI.
+        """
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel(self)
+        try:
+            caption = self._translator["inventory.waste.dialog_title"]
+        except Exception:
+            caption = "Record Waste"
+        title.setText(f"{caption} - {self._product_label}")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(8)
+
+        self.spinQuantity = QDoubleSpinBox(self)
+        max_value = 9999999999.0
+        if self._max_quantity is not None:
+            try:
+                mq = float(self._max_quantity)
+                if mq > 0:
+                    max_value = mq
+            except Exception:
+                pass
+        self.spinQuantity.setRange(0.0, max_value)
+        self.spinQuantity.setDecimals(3)
+        self.spinQuantity.setGroupSeparatorShown(True)
+
+        self.cmbReason = QComboBox(self)
+        self.cmbReason.addItem(
+            self._translator.get("inventory.waste.reason.breakage", "Breakage"),
+            "Breakage",
+        )
+        self.cmbReason.addItem(
+            self._translator.get("inventory.waste.reason.theft", "Theft"),
+            "Theft",
+        )
+        self.cmbReason.addItem(
+            self._translator.get("inventory.waste.reason.expiry", "Expired"),
+            "Expiry",
+        )
+        self.cmbReason.addItem(
+            self._translator.get("inventory.waste.reason.other", "Other"),
+            "Other",
+        )
+
+        self.txtNotes = QLineEdit(self)
+        self.txtNotes.setPlaceholderText(
+            self._translator.get(
+                "inventory.waste.notes_placeholder",
+                "Optional notes...",
+            )
+        )
+
+        form.addRow(
+            self._translator.get("inventory.waste.field.quantity", "Quantity"),
+            self.spinQuantity,
+        )
+        form.addRow(
+            self._translator.get("inventory.waste.field.reason", "Reason"),
+            self.cmbReason,
+        )
+        form.addRow(
+            self._translator.get("inventory.waste.field.notes", "Notes"),
+            self.txtNotes,
+        )
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        layout.addWidget(buttons)
+
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+
+    def _on_accept(self) -> None:
+        """
+        Validate and accept the dialog.
+        """
+        try:
+            qty_val = self.spinQuantity.value()
+            if qty_val <= 0:
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    self._translator.get(
+                        "inventory.dialog.error.invalid_quantity",
+                        "Quantity must be greater than zero.",
+                    ),
+                )
+                return
+
+            self._quantity = Decimal(str(qty_val))
+            self._reason = self.cmbReason.currentData() or "Other"
+            self._notes = self.txtNotes.text().strip()
+
+            self.accept()
+        except Exception as exc:
+            logger.exception("Error in WasteDialog._on_accept: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
+
+    def get_values(self) -> tuple[Decimal, str, str]:
+        """
+        Return the entered values.
+        """
+        return self._quantity, self._reason, self._notes
 
 
 class ProductDialog(QDialog):
@@ -1283,7 +1501,8 @@ class ProductDialog(QDialog):
                 return
 
             search_term = name or barcode
-            url = QUrl(f"https://torob.com/search/?q={search_term}")
+            # Torob expects the search term under the "query" parameter.
+            url = QUrl(f"https://torob.com/search/?query={search_term}")
             if not QDesktopServices.openUrl(url):
                 QMessageBox.warning(
                     self,

@@ -116,6 +116,22 @@
 
   "inventory.dialog.restock_title": "Add Stock",
 
+  "inventory.context.record_waste": "Record Waste",
+  "inventory.waste.dialog_title": "Record Waste",
+  "inventory.waste.field.quantity": "Quantity",
+  "inventory.waste.field.reason": "Reason",
+  "inventory.waste.field.notes": "Notes",
+  "inventory.waste.notes_placeholder": "Optional notes...",
+  "inventory.waste.reason.breakage": "Breakage",
+  "inventory.waste.reason.theft": "Theft",
+  "inventory.waste.reason.expiry": "Expired",
+  "inventory.waste.reason.other": "Other",
+  "inventory.waste.info.recorded": "Waste recorded successfully.",
+  "inventory.waste.title": "Record Waste",
+  "inventory.waste.reason": "Reason",
+  "inventory.waste.success": "Waste recorded successfully.",
+  "btn.waste": "Waste",
+
   "settings.page_title": "Settings",
   "settings.profile.title": "Profile",
   "settings.profile.field.national_id": "National ID",

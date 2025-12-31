@@ -558,3 +558,30 @@ class ReturnItem(Base):
         "Product",
         back_populates="return_items",
     )
+
+
+# =====================================================
+# 7. STOCK ADJUSTMENTS (WASTE / DAMAGE)
+# =====================================================
+
+
+class StockAdjustment(Base):
+    __tablename__ = "stock_adjustment"
+
+    AdjustmentID = Column(Integer, primary_key=True, autoincrement=True)
+    ProdID = Column(Integer, ForeignKey("product.ProdID"), nullable=False)
+    AdjustmentDate = Column(DateTime, server_default=func.now())
+    Quantity = Column(Numeric(12, 3), nullable=False)
+    Reason = Column(String, nullable=False)  # Breakage, Theft, Expiry, Other
+    Notes = Column(Text, nullable=True)
+    EmpID = Column(Integer, ForeignKey("employee.EmpID"), nullable=True)
+
+    # Relationships
+    product = relationship(
+        "Product",
+        backref="stock_adjustments",
+    )
+    employee = relationship(
+        "Employee",
+        backref="stock_adjustments",
+    )
