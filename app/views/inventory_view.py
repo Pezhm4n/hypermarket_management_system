@@ -7,6 +7,7 @@ import logging
 import os
 from datetime import date, timedelta, datetime
 import jdatetime
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 from PyQt6 import uic
@@ -202,11 +203,14 @@ class InventoryView(QWidget):
         """
         self.txtSearchProduct.textChanged.connect(self._on_search_changed)
         self.btnAddProduct.clicked.connect(self._on_add_clicked)
-        
-        # ✅ اضافه کردن سیگنال‌های دکمه‌های گزارش
+
+        self.btnImportExcel = QPushButton(self)
+        self.btnImportExcel.setObjectName("btnImportExcel")
+        self.horizontalLayout_top.insertWidget(2, self.btnImportExcel)
+        self.btnImportExcel.clicked.connect(self._on_import_excel_clicked)
+
         self.btnExpiryReport.clicked.connect(self._open_expiry_report_dialog)
         self.btnInventoryReport.clicked.connect(self._open_inventory_report_dialog)
-
         self.tblProducts.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tblProducts.customContextMenuRequested.connect(
             self._show_context_menu
@@ -221,8 +225,11 @@ class InventoryView(QWidget):
         self.txtSearchProduct.setPlaceholderText(
             self._translator["inventory.search_placeholder"]
         )
-        
-        # ✅ ترجمه دکمه‌های گزارش
+
+        self.btnImportExcel.setText(
+            self._translator.get("inventory.button.import_excel", "ورود از اکسل")
+        )
+
         self.btnExpiryReport.setText(
             self._translator.get(
                 "inventory.button.expiry_report",
@@ -235,7 +242,7 @@ class InventoryView(QWidget):
                 "گزارش موجودی",
             )
         )
-        
+
         self._setup_table()
 
     def refresh(self) -> None:
@@ -736,6 +743,61 @@ class InventoryView(QWidget):
                 self._translator["dialog.error_title"],
                 str(exc),
             )
+
+    def _on_import_excel_clicked(self) -> None:
+        """باز کردن پنجره انتخاب فایل و ارسال داده‌ها به کنترلر"""
+        import pandas as pd
+        
+        # ۱. انتخاب فایل توسط کاربر
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            self._translator.get("excel.dialog.select_file", "انتخاب فایل اکسل"), 
+            "", 
+            "Excel Files (*.xlsx *.xls)"
+        )
+        
+        if not file_path:
+            return
+
+        try:
+            # ۲. خواندن فایل با کتابخانه pandas
+            df = pd.read_excel(file_path)
+            
+            # ۳. استانداردسازی نام ستون‌ها (فارسی یا انگلیسی فرقی نکند)
+            column_mapping = {
+                "نام کالا": "Name", "Name": "Name",
+                "بارکد": "Barcode", "Barcode": "Barcode",
+                "دسته‌بندی": "Category", "Category": "Category",
+                "قیمت فروش": "BasePrice", "BasePrice": "BasePrice",
+                "حداقل موجودی": "MinStock", "MinStock": "MinStock",
+                "واحد": "Unit", "Unit": "Unit",
+                "فاسد شدنی": "IsPerishable", "IsPerishable": "IsPerishable",
+                "تعداد اولیه": "InitialQty", "InitialQty": "InitialQty",
+                "قیمت خرید": "BuyPrice", "BuyPrice": "BuyPrice",
+                "تاریخ انقضا": "ExpiryDate", "ExpiryDate": "ExpiryDate",
+                "تامین کننده": "SupplierName", "SupplierName": "SupplierName"
+            }
+            df.rename(columns=column_mapping, inplace=True)
+            
+            # تبدیل داده‌های اکسل به لیست دیکشنری برای پایتون
+            data_list = df.to_dict(orient="records")
+            
+            # ۴. ارسال به کنترلر برای ذخیره در دیتابیس
+            result = self._controller.bulk_import_products(data_list)
+            
+            # ۵. نمایش نتیجه
+            msg = self._translator.get("excel.success_msg", "تعداد {count} کالا وارد شد.").format(count=result['success'])
+            if result['errors']:
+                msg += "\n\n" + self._translator.get("excel.error_log", "خطاها:") + "\n" + "\n".join(result['errors'][:5])
+            
+            QMessageBox.information(self, self._translator.get("dialog.info_title", "Info"), msg)
+            
+            # رفرش جدول برای دیدن کالاهای جدید
+            self._load_products()
+
+        except Exception as e:
+            logger.exception("Excel Import Error")
+            QMessageBox.critical(self, "Error", f"Error: {str(e)}")
 
 
 class RestockDialog(QDialog):

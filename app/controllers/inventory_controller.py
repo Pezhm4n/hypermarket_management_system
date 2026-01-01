@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional
+import pandas as pd
 
 import logging
 import re
@@ -784,3 +785,42 @@ class InventoryController:
                 session.rollback()
                 logger.error("Error in add_stock: %s", exc)
                 return False
+
+    def bulk_import_products(self, data_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        وارد کردن گروهی کالاها از لیست داده‌های استخراج شده از اکسل.
+        برمی‌گرداند: تعداد موفقیت‌ها و لیست خطاها.
+        """
+        success_count = 0
+        errors = []
+        
+        # برای سرعت بیشتر، لیست تامین‌کنندگان را یکبار کش می‌کنیم
+        from app.models.models import Supplier
+        with self._get_session() as session:
+            suppliers = {s.CompanyName: s.SupID for s in session.query(Supplier).all()}
+
+        for index, row in enumerate(data_list):
+            try:
+                # تبدیل نام تامین‌کننده به ID
+                sup_name = str(row.get("SupplierName", "")).strip()
+                sup_id = suppliers.get(sup_name)
+
+                # فراخوانی متد موجود برای حفظ یکپارچگی منطق تجاری
+                self.create_product(
+                    name=str(row.get("Name", "")),
+                    barcode=str(row.get("Barcode", "")),
+                    category_name=str(row.get("Category", "Other")),
+                    base_price=row.get("BasePrice", 0),
+                    min_stock=row.get("MinStock", 0),
+                    unit=str(row.get("Unit", "Pcs")),
+                    is_perishable=bool(row.get("IsPerishable", False)),
+                    initial_quantity=row.get("InitialQty", 0),
+                    buy_price=row.get("BuyPrice", 0),
+                    expiry_date_jalali=str(row.get("ExpiryDate", "")) if row.get("IsPerishable") else None,
+                    sup_id=sup_id
+                )
+                success_count += 1
+            except Exception as e:
+                errors.append(f"ردیف {index + 2} ({row.get('Name')}): {str(e)}")
+        
+        return {"success": success_count, "errors": errors}

@@ -15,3 +15,5 @@ opencv-python
 Pillow
 requests>=2.32.0
 beautifulsoup4>=4.12.0
+pandas>=2.0.0
+openpyxl>=3.1.0
