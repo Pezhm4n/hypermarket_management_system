@@ -794,27 +794,36 @@ class SalesController:
     # --------------------------------------------------------------------- #
     # Dashboard helpers
     # --------------------------------------------------------------------- #
-    def get_today_dashboard_stats(self) -> dict:
+    def get_dashboard_stats(self) -> dict:
         """
-        Return today's total sales amount and invoice count:
+        Return today's dashboard KPIs as a dictionary:
 
             {
-                "total_sales": Decimal,
-                "invoice_count": int,
+                "total_sales": Decimal,        # Sum of today's non-void invoice totals
+                "transaction_count": int,      # Count of today's non-void invoices
+                "total_profit": Decimal,       # Sum((UnitPrice - BuyPrice) * Quantity)
+                "low_stock_count": int,        # Count of products below MinStockLevel
             }
         """
         try:
             today = date.today()
+            # Use explicit datetime range [today 00:00, tomorrow 00:00)
+            start_dt = datetime.combine(today, datetime.min.time())
+            end_dt = start_dt + timedelta(days=1)
             logger.info("Calculating dashboard stats for %s.", today)
 
             with self._get_session() as session:
+                # ------------------------------------------------------------------
+                # Total sales and transaction count
+                # ------------------------------------------------------------------
                 total_sales_raw, invoice_count = (
                     session.query(
                         func.coalesce(func.sum(Invoice.TotalAmount), 0),
                         func.count(Invoice.InvID),
                     )
                     .filter(
-                        func.date(Invoice.Date) == today,
+                        Invoice.Date >= start_dt,
+                        Invoice.Date < end_dt,
                         Invoice.Status != "Void",
                     )
                     .one()
@@ -824,19 +833,118 @@ class SalesController:
                     Decimal("0.01"),
                     rounding=ROUND_HALF_UP,
                 )
-                invoice_count_int = int(invoice_count or 0)
+                transaction_count = int(invoice_count or 0)
+
+                # ------------------------------------------------------------------
+                # Total profit for today:
+                # Sum((InvoiceItem.UnitPrice - InventoryBatch.BuyPrice) * Quantity)
+                # Batch cost falls back to Product.BasePrice, then 0 if both missing.
+                # ------------------------------------------------------------------
+                cost_expr = func.coalesce(
+                    InventoryBatch.BuyPrice,
+                    Product.BasePrice,
+                    0,
+                )
+                profit_expr = (InvoiceItem.UnitPrice - cost_expr) * InvoiceItem.Quantity
+
+                total_profit_raw = (
+                    session.query(
+                        func.coalesce(func.sum(profit_expr), 0),
+                    )
+                    .select_from(Invoice)
+                    .join(InvoiceItem, InvoiceItem.InvID == Invoice.InvID)
+                    .outerjoin(
+                        InventoryBatch,
+                        InvoiceItem.BatchID == InventoryBatch.BatchID,
+                    )
+                    .outerjoin(
+                        Product,
+                        InvoiceItem.ProdID == Product.ProdID,
+                    )
+                    .filter(
+                        Invoice.Date >= start_dt,
+                        Invoice.Date < end_dt,
+                        Invoice.Status != "Void",
+                    )
+                    .scalar()
+                )
+
+                total_profit = Decimal(str(total_profit_raw or 0)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+
+                # ------------------------------------------------------------------
+                # Low stock products: distinct active products where
+                # Total(CurrentQuantity) <= MinStockLevel and MinStockLevel > 0.
+                # ------------------------------------------------------------------
+                stock_subq = (
+                    session.query(
+                        Product.ProdID.label("ProdID"),
+                        func.coalesce(
+                            func.sum(InventoryBatch.CurrentQuantity),
+                            0,
+                        ).label("TotalQty"),
+                        Product.MinStockLevel.label("MinStock"),
+                        Product.IsActive.label("IsActive"),
+                    )
+                    .outerjoin(
+                        InventoryBatch,
+                        InventoryBatch.ProdID == Product.ProdID,
+                    )
+                    .group_by(
+                        Product.ProdID,
+                        Product.MinStockLevel,
+                        Product.IsActive,
+                    )
+                ).subquery("stock")
+
+                low_stock_count_raw = (
+                    session.query(func.count())
+                    .select_from(stock_subq)
+                    .filter(
+                        stock_subq.c.IsActive == True,  # noqa: E712
+                        func.coalesce(stock_subq.c.MinStock, 0) > 0,
+                        stock_subq.c.TotalQty <= stock_subq.c.MinStock,
+                    )
+                    .scalar()
+                )
+
+                low_stock_count = int(low_stock_count_raw or 0)
 
                 logger.info(
-                    "Dashboard stats for %s: total_sales=%s, invoice_count=%s",
+                    (
+                        "Dashboard stats for %s: total_sales=%s, "
+                        "transactions=%s, profit=%s, low_stock_count=%s"
+                    ),
                     today,
                     total_sales,
-                    invoice_count_int,
+                    transaction_count,
+                    total_profit,
+                    low_stock_count,
                 )
 
                 return {
                     "total_sales": total_sales,
-                    "invoice_count": invoice_count_int,
+                    "transaction_count": transaction_count,
+                    "total_profit": total_profit,
+                    "low_stock_count": low_stock_count,
                 }
+        except Exception as e:
+            logger.error("Error in get_dashboard_stats: %s", e, exc_info=True)
+            raise
+
+    def get_today_dashboard_stats(self) -> dict:
+        """
+        Backwards-compatible wrapper that returns today's total sales amount
+        and invoice count only.
+        """
+        try:
+            stats = self.get_dashboard_stats()
+            return {
+                "total_sales": stats.get("total_sales", Decimal("0")),
+                "invoice_count": int(stats.get("transaction_count") or 0),
+            }
         except Exception as e:
             logger.error("Error in get_today_dashboard_stats: %s", e, exc_info=True)
             raise

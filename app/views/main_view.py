@@ -132,6 +132,7 @@ class MainView(QMainWindow):
 
         self._page_indices: Dict[str, int] = {}
         self._current_page_key: str = "sales"
+        self._low_stock_click_enabled: bool = False
 
         # Ensure a professional default window size
         self.setMinimumSize(1280, 800)
@@ -320,8 +321,57 @@ class MainView(QMainWindow):
         orders_layout.addWidget(self._kpi_orders_title)
         orders_layout.addWidget(self._kpi_orders_value)
 
+        # Profit card
+        self._kpi_profit_frame = QFrame(dashboard_page)
+        self._kpi_profit_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        profit_layout = QVBoxLayout(self._kpi_profit_frame)
+        profit_layout.setContentsMargins(16, 12, 16, 12)
+        profit_layout.setSpacing(4)
+
+        self._kpi_profit_title = QLabel(self._kpi_profit_frame)
+        self._kpi_profit_value = QLabel(self._kpi_profit_frame)
+        self._kpi_profit_value.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._kpi_profit_value.setObjectName("KpiValueProfit")
+
+        # Subtle green accent for profit card
+        self._kpi_profit_frame.setStyleSheet(
+            "QFrame { background-color: #064e3b; border-radius: 8px; }"
+        )
+
+        profit_layout.addWidget(self._kpi_profit_title)
+        profit_layout.addWidget(self._kpi_profit_value)
+
+        # Low stock card
+        self._kpi_low_stock_frame = QFrame(dashboard_page)
+        self._kpi_low_stock_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        low_stock_layout = QVBoxLayout(self._kpi_low_stock_frame)
+        low_stock_layout.setContentsMargins(16, 12, 16, 12)
+        low_stock_layout.setSpacing(4)
+
+        self._kpi_low_stock_title = QLabel(self._kpi_low_stock_frame)
+        self._kpi_low_stock_value = QLabel(self._kpi_low_stock_frame)
+        self._kpi_low_stock_value.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._kpi_low_stock_value.setObjectName("KpiValueLowStock")
+
+        # Warm red/orange accent for low stock card
+        self._kpi_low_stock_frame.setStyleSheet(
+            "QFrame { background-color: #7f1d1d; border-radius: 8px; }"
+        )
+
+        # Make the low stock card clickable (handled in _on_low_stock_card_clicked)
+        self._kpi_low_stock_frame.setCursor(Qt.CursorShape.ArrowCursor)
+        self._kpi_low_stock_frame.mousePressEvent = (  # type: ignore[assignment]
+            self._on_low_stock_card_clicked
+        )
+
         kpi_layout.addWidget(self._kpi_sales_frame)
         kpi_layout.addWidget(self._kpi_orders_frame)
+        kpi_layout.addWidget(self._kpi_profit_frame)
+        kpi_layout.addWidget(self._kpi_low_stock_frame)
         kpi_layout.addStretch()
 
         dashboard_layout.addLayout(kpi_layout)
@@ -537,22 +587,44 @@ class MainView(QMainWindow):
         Refresh dashboard KPI cards and the 7-day sales chart.
         """
         try:
-            stats = self._sales_controller.get_today_dashboard_stats()
+            stats = self._sales_controller.get_dashboard_stats()
             total_sales = stats.get("total_sales")
-            invoice_count = stats.get("invoice_count")
+            transaction_count = stats.get("transaction_count")
+            total_profit = stats.get("total_profit")
+            low_stock_count = stats.get("low_stock_count")
 
             if total_sales is None:
                 total_sales = Decimal("0")
-            if invoice_count is None:
-                invoice_count = 0
+            if transaction_count is None:
+                transaction_count = 0
+            if total_profit is None:
+                total_profit = Decimal("0")
+            if low_stock_count is None:
+                low_stock_count = 0
 
-            formatted_total = f"{float(total_sales):,.0f}"
+            formatted_sales = f"{float(total_sales):,.0f}"
+            formatted_profit = f"{float(total_profit):,.0f}"
 
             if hasattr(self, "_kpi_sales_value"):
-                self._kpi_sales_value.setText(formatted_total)
+                self._kpi_sales_value.setText(formatted_sales)
             if hasattr(self, "_kpi_orders_value"):
-                self._kpi_orders_value.setText(str(int(invoice_count)))
+                self._kpi_orders_value.setText(str(int(transaction_count)))
+            if hasattr(self, "_kpi_profit_value"):
+                self._kpi_profit_value.setText(formatted_profit)
+            if hasattr(self, "_kpi_low_stock_value"):
+                self._kpi_low_stock_value.setText(str(int(low_stock_count)))
 
+            # Enable or disable click behavior for low stock card
+            self._low_stock_click_enabled = bool(low_stock_count > 0)
+            if hasattr(self, "_kpi_low_stock_frame"):
+                cursor = (
+                    Qt.CursorShape.PointingHandCursor
+                    if self._low_stock_click_enabled
+                    else Qt.CursorShape.ArrowCursor
+                )
+                self._kpi_low_stock_frame.setCursor(cursor)
+
+            # Update last 7 days sales chart
             series = self._sales_controller.get_last_7_days_sales_series()
             labels = series.get("labels", [])
             totals = series.get("totals", [])
@@ -573,9 +645,11 @@ class MainView(QMainWindow):
                 )
 
             logger.info(
-                "Dashboard refreshed: total_sales=%s, invoice_count=%s",
-                formatted_total,
-                invoice_count,
+                "Dashboard refreshed: total_sales=%s, transactions=%s, profit=%s, low_stock=%s",
+                formatted_sales,
+                transaction_count,
+                formatted_profit,
+                low_stock_count,
             )
         except Exception as e:
             logger.error("Error in refresh_dashboard: %s", e, exc_info=True)
@@ -585,6 +659,20 @@ class MainView(QMainWindow):
         Backwards-compatible wrapper for older callers.
         """
         self.refresh_dashboard()
+
+    def _on_low_stock_card_clicked(self, event) -> None:  # type: ignore[override]
+        """
+        Navigate to the Inventory view when the low stock KPI card is clicked.
+        Only active when low_stock_count > 0.
+        """
+        try:
+            _ = event
+            if not getattr(self, "_low_stock_click_enabled", False):
+                return
+
+            self._switch_page("inventory")
+        except Exception as e:
+            logger.error("Error in _on_low_stock_card_clicked: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------ #
     # Public API
