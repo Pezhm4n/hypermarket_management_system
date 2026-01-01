@@ -1,11 +1,10 @@
 
-
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
 
 from PyQt6 import uic
-from PyQt6.QtCore import Qt, QPoint, QMarginsF
+from PyQt6.QtCore import Qt, QPoint, QMarginsF, pyqtSignal
 from PyQt6.QtGui import (
     QDoubleValidator,
     QKeySequence,
@@ -41,6 +40,7 @@ from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
 from app.views.components.scanner_dialog import ScannerDialog
 from app.views.components.return_dialog import ReturnDialog
+from app.views.components.close_shift_dialog import CloseShiftDialog
 from app.views.customers_view import CustomersDialog
 
 logger = logging.getLogger(__name__)
@@ -55,9 +55,9 @@ class StartShiftDialog(QDialog):
     """
 
     def __init__(
-        self,
-        translation_manager: TranslationManager,
-        parent: Optional[QWidget] = None,
+            self,
+            translation_manager: TranslationManager,
+            parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self._translator = translation_manager
@@ -107,7 +107,7 @@ class StartShiftDialog(QDialog):
                 QDialogButtonBox.StandardButton.Ok
                 | QDialogButtonBox.StandardButton.Cancel,
                 parent=self,
-            )
+                )
             layout.addWidget(button_box)
 
             button_box.accepted.connect(self._on_accept)
@@ -165,10 +165,14 @@ class SalesView(QWidget):
     and checkout.
     """
 
+    # Emitted after a shift has been successfully closed, with the summary
+    # dictionary returned by SalesController.close_shift.
+    shift_closed = pyqtSignal(dict)
+
     def __init__(
-        self,
-        translation_manager: TranslationManager,
-        parent: Optional[QWidget] = None,
+            self,
+            translation_manager: TranslationManager,
+            parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
 
@@ -758,10 +762,19 @@ class SalesView(QWidget):
             _ = value
             self._recalculate_total()
         except Exception as e:
-            logger.error("Error in _on_redeem_points_changed: %s", e, excnslator["dialog.info_title"],
+            logger.error("Error in _on_redeem_points_changed: %s", e, exc_info=True)
+
+    def _on_hold_order_clicked(self) -> None:
+        try:
+            cart_items = self._collect_cart_items()
+            if not cart_items:
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
                     self._translator["sales.info.cart_empty"],
                 )
                 return
+
             park_id = self._controller.park_order(
                 cart_items=cart_items,
                 cust_id=self._selected_customer_id,
@@ -903,7 +916,7 @@ class SalesView(QWidget):
                 QDialogButtonBox.StandardButton.Ok
                 | QDialogButtonBox.StandardButton.Cancel,
                 parent=dialog,
-            )
+                )
             layout.addWidget(buttons)
 
             def _on_accept() -> None:
@@ -955,9 +968,27 @@ class SalesView(QWidget):
             amount=self._format_money(Decimal("0"))
         )
         self.lblTotalAmount.setText(total_text)
+
+        # Reset manual discount control
         if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
-            self.spinDiscount.blockSignals(True)
-           
+            try:
+                self.spinDiscount.blockSignals(True)
+                self.spinDiscount.setValue(0.0)
+                self.spinDiscount.setEnabled(not self._return_mode)
+            finally:
+                self.spinDiscount.blockSignals(False)
+
+        # Reset loyalty redemption control
+        if hasattr(self, "spinRedeemPoints") and self.spinRedeemPoints is not None:
+            try:
+                self.spinRedeemPoints.blockSignals(True)
+                self.spinRedeemPoints.setValue(0)
+                self.spinRedeemPoints.setEnabled(
+                    self._selected_customer_id is not None and not self._return_mode
+                )
+            finally:
+                self.spinRedeemPoints.blockSignals(False)
+
 
     def _find_cart_row_by_prod_id(self, prod_id: int) -> int:
         for row in range(self.tblCart.rowCount()):
@@ -1197,10 +1228,10 @@ class SalesView(QWidget):
         # Handle manual discount logic
         discount_value = Decimal("0")
         if (
-            not self._return_mode
-            and hasattr(self, "spinDiscount")
-            and self.spinDiscount is not None
-            and self.spinDiscount.isEnabled()
+                not self._return_mode
+                and hasattr(self, "spinDiscount")
+                and self.spinDiscount is not None
+                and self.spinDiscount.isEnabled()
         ):
             try:
                 discount_value = Decimal(str(self.spinDiscount.value()))
@@ -1237,11 +1268,11 @@ class SalesView(QWidget):
         points_to_use = 0
 
         if (
-            not self._return_mode
-            and self._selected_customer_id is not None
-            and hasattr(self, "spinRedeemPoints")
-            and self.spinRedeemPoints is not None
-            and self.spinRedeemPoints.isEnabled()
+                not self._return_mode
+                and self._selected_customer_id is not None
+                and hasattr(self, "spinRedeemPoints")
+                and self.spinRedeemPoints is not None
+                and self.spinRedeemPoints.isEnabled()
         ):
             try:
                 requested_points = int(self.spinRedeemPoints.value())
@@ -1274,7 +1305,7 @@ class SalesView(QWidget):
                 if points_to_use > 0:
                     try:
                         loyalty_discount = (
-                            Decimal(points_to_use) * Decimal(str(LOYALTY_POINT_VALUE))
+                                Decimal(points_to_use) * Decimal(str(LOYALTY_POINT_VALUE))
                         )
                     except Exception:
                         loyalty_discount = Decimal("0")
@@ -1339,7 +1370,7 @@ class SalesView(QWidget):
                     QDialogButtonBox.StandardButton.Ok
                     | QDialogButtonBox.StandardButton.Cancel,
                     parent=dialog,
-                )
+                    )
                 layout.addWidget(button_box)
 
                 button_box.accepted.connect(dialog.accept)
@@ -1573,9 +1604,9 @@ class SalesView(QWidget):
                 new_balance = None
 
                 if (
-                    not self._return_mode
-                    and self._selected_customer_id is not None
-                    and self._loyalty_points_balance is not None
+                        not self._return_mode
+                        and self._selected_customer_id is not None
+                        and self._loyalty_points_balance is not None
                 ):
                     try:
                         base_balance = max(int(self._loyalty_points_balance or 0), 0)
@@ -1628,15 +1659,33 @@ class SalesView(QWidget):
 
     def close_shift(self) -> None:
         """
-        Close the active shift without user confirmation.
+        Close the active shift using the CloseShiftDialog reconciliation
+        workflow.
 
-        Intended for use by the main window during application shutdown.
+        Intended for use by both the main window during application shutdown
+        and the explicit "Close Shift" button in the Sales view.
         """
         try:
             if self._active_shift_id is None:
                 return
 
-            summary = self._controller.close_shift(self._active_shift_id)
+            dialog = CloseShiftDialog(
+                translation_manager=self._translator,
+                controller=self._controller,
+                shift_id=self._active_shift_id,
+                parent=self,
+            )
+            result = dialog.exec()
+            if result != QDialog.DialogCode.Accepted:
+                logger.info("CloseShiftDialog cancelled by user.")
+                return
+
+            counted_cash = dialog.counted_cash
+
+            summary = self._controller.close_shift(
+                self._active_shift_id,
+                counted_cash=counted_cash,
+            )
             try:
                 self._generate_shift_report_pdf(summary)
             except Exception as inner_exc:
@@ -1648,8 +1697,32 @@ class SalesView(QWidget):
 
             self._clear_cart()
             self._active_shift_id = None
+
+            try:
+                self.shift_closed.emit(summary)
+            except Exception:
+                # Emitting the signal must not break the workflow.
+                logger.debug("Failed to emit shift_closed signal.", exc_info=True)
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator["shift.close_report_title"],
+            )
+        except ValueError as e:
+            logger.error("Validation error in close_shift: %s", e, exc_info=True)
+            QMessageBox.warning(
+                self,
+                self._translator["dialog.warning_title"],
+                str(e),
+            )
         except Exception as e:
             logger.error("Error in close_shift: %s", e, exc_info=True)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(e),
+            )
 
     def _on_close_shift_clicked(self) -> None:
         try:
@@ -1663,28 +1736,9 @@ class SalesView(QWidget):
                 )
                 return
 
-            confirm = QMessageBox.question(
-                self,
-                self._translator["shift.close_confirm_title"],
-                self._translator["shift.close_confirm_body"],
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if confirm != QMessageBox.StandardButton.Yes:
-                logger.info("User cancelled closing shift.")
-                return
-
-            summary = self._controller.close_shift(self._active_shift_id)
-            self._generate_shift_report_pdf(summary)
-
-            # Reset shift-related UI state
-            self._clear_cart()
-            self._active_shift_id = None
-
-            QMessageBox.information(
-                self,
-                self._translator["dialog.info_title"],
-                self._translator["shift.close_report_title"],
-            )
+            # The CloseShiftDialog already contains a confirmation button,
+            # so we directly invoke the close_shift workflow here.
+            self.close_shift()
         except Exception as e:
             logger.error("Error in _on_close_shift_clicked: %s", e, exc_info=True)
             QMessageBox.critical(
@@ -1901,17 +1955,23 @@ class SalesView(QWidget):
             )
 
     def _build_receipt_html(
-        self,
-        cart_items: List[Dict[str, Any]],
-        total: Decimal,
-        subtotal: Optional[Decimal] = None,
-        discount: Optional[Decimal] = None,
-        is_refund: bool = False,
-        loyalty_discount: Optional[Decimal] = None,
-        points_spent: int = 0,
-        points_earned: int = 0,
-        loyalty_balance_after: Optional[int] = None,
+            self,
+            cart_items: List[Dict[str, Any]],
+            total: Decimal,
+            subtotal: Optional[Decimal] = None,
+            discount: Optional[Decimal] = None,
+            is_refund: bool = False,
+            loyalty_discount: Optional[Decimal] = None,
+            points_spent: int = 0,
+            points_earned: int = 0,
+            loyalty_balance_after: Optional[int] = None,
     ) -> str:
+        """
+        Build HTML for the sales/return receipt.
+
+        Uses a single triple-quoted f-string for the main document and avoids
+        backslash-based line continuations to keep syntax simple and robust.
+        """
         try:
             lines_html = ""
             for item in cart_items:
@@ -1919,11 +1979,7 @@ class SalesView(QWidget):
                 qty = item.get("Quantity", Decimal("0"))
                 unit_price = item.get("UnitPrice", Decimal("0"))
                 try:
-                    qty_dec = (
-                        qty
-                        if isinstance(qty, Decimal)
-                        else Decimal(str(qty or "0"))
-                    )
+                    qty_dec = qty if isinstance(qty, Decimal) else Decimal(str(qty or "0"))
                 except Exception:
                     qty_dec = Decimal("0")
                 try:
@@ -1934,6 +1990,7 @@ class SalesView(QWidget):
                     )
                 except Exception:
                     price_dec = Decimal("0")
+
                 line_total = (qty_dec * price_dec) if qty_dec and price_dec else Decimal("0")
                 lines_html += f"""
                 <tr>
@@ -1945,7 +2002,6 @@ class SalesView(QWidget):
                 """
 
             customer_line = self._selected_customer_name or "-"
-            tx_type = "مرجوعی" if is_refund else "فروش"
 
             if subtotal is None:
                 subtotal = total
@@ -1990,34 +2046,36 @@ class SalesView(QWidget):
             show_points_earned = points_earned > 0
             show_balance = loyalty_balance_after is not None
 
-            loyalty_lines_html = ""
+            loyalty_lines: list[str] = []
             if show_loyalty_discount:
-                loyalty_lines_html += (
-                    f"&lt;div class=\\"meta\\"&gt;"
-                    f"{loyalty_discount_label}: -{self._format_money(loyalty_discount)} "
-                    f"({loyalty_points_spent_label.format(points=points_spent)})"
-                    f"&lt;/div&gt;"
+                loyalty_lines.append(
+                    f'<div class="meta">'
+                    f'{loyalty_discount_label}: -{self._format_money(loyalty_discount)} '
+                    f'({loyalty_points_spent_label.format(points=points_spent)})'
+                    f"</div>"
                 )
 
             if show_points_earned:
-                loyalty_lines_html += (
-                    f"&lt;div class=\\"meta\\" style=\\"font-weight:bold;\\"&gt;"
+                loyalty_lines.append(
+                    f'<div class="meta" style="font-weight:bold;">'
                     f"{loyalty_points_earned_label}: +{points_earned}"
-                    f"&lt;/div&gt;"
+                    f"</div>"
                 )
 
             if show_balance:
-                loyalty_lines_html += (
-                    f"&lt;div class=\\"meta\\"&gt;"
+                loyalty_lines.append(
+                    f'<div class="meta">'
                     f"{loyalty_balance_label}: {loyalty_balance_after} pts"
-                    f"&lt;/div&gt;"
+                    f"</div>"
                 )
 
+            loyalty_html = "\n".join(loyalty_lines)
+
             html = f"""
-            &lt;html dir="rtl"&gt;
-              &lt;head&gt;
-                &lt;meta charset="utf-8" /&gt;
-                &lt;style&gt;
+            <html dir="rtl">
+              <head>
+                <meta charset="utf-8" />
+                <style>
                   @page {{
                     size: 80mm auto;
                     margin: 4mm;
@@ -2053,39 +2111,39 @@ class SalesView(QWidget):
                     font-size: 8pt;
                     margin-top: 2px;
                   }}
-                &lt;/style&gt;
-              &lt;/head&gt;
-              &lt;body&gt;
-                &lt;h1&gt;{tx_title}&lt;/h1&gt;
-                &lt;div class="meta"&gt;{customer_label}: {customer_line}&lt;/div&gt;
-                &lt;table&gt;
-                  &lt;thead&gt;
-                    &lt;tr&gt;
-                      &lt;th&gt;{col_name}&lt;/th&gt;
-                      &lt;th&gt;{col_qty}&lt;/th&gt;
-                      &lt;th&gt;{col_price}&lt;/th&gt;
-                      &lt;th&gt;{col_total}&lt;/th&gt;
-                    &lt;/tr&gt;
-                  &lt;/thead&gt;
-                  &lt;tbody&gt;
+                </style>
+              </head>
+              <body>
+                <h1>{tx_title}</h1>
+                <div class="meta">{customer_label}: {customer_line}</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{col_name}</th>
+                      <th>{col_qty}</th>
+                      <th>{col_price}</th>
+                      <th>{col_total}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
                     {lines_html}
-                    &lt;tr&gt;
-                      &lt;td colspan="3" style="text-align:left;"&gt;{subtotal_label}&lt;/td&gt;
-                      &lt;td style="text-align:right;"&gt;{self._format_money(subtotal)}&lt;/td&gt;
-                    &lt;/tr&gt;
-                    &lt;tr&gt;
-                      &lt;td colspan="3" style="text-align:left;"&gt;{discount_label}&lt;/td&gt;
-                      &lt;td style="text-align:right;"&gt;{self._format_money(discount)}&lt;/td&gt;
-                    &lt;/tr&gt;
-                    &lt;tr class="total-row"&gt;
-                      &lt;td colspan="3" style="text-align:left;"&gt;{total_label}&lt;/td&gt;
-                      &lt;td style="text-align:right;"&gt;{self._format_money(total)}&lt;/td&gt;
-                    &lt;/tr&gt;
-                  &lt;/tbody&gt;
-                &lt;/table&gt;
-                {loyalty_lines_html}
-              &lt;/body&gt;
-            &lt;/html&gt;
+                    <tr>
+                      <td colspan="3" style="text-align:left;">{subtotal_label}</td>
+                      <td style="text-align:right;">{self._format_money(subtotal)}</td>
+                    </tr>
+                    <tr>
+                      <td colspan="3" style="text-align:left;">{discount_label}</td>
+                      <td style="text-align:right;">{self._format_money(discount)}</td>
+                    </tr>
+                    <tr class="total-row">
+                      <td colspan="3" style="text-align:left;">{total_label}</td>
+                      <td style="text-align:right;">{self._format_money(total)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                {loyalty_html}
+              </body>
+            </html>
             """
             return html
         except Exception as e:
@@ -2093,12 +2151,12 @@ class SalesView(QWidget):
             return "<html><body><pre>Receipt error</pre></body></html>"
 
     def _generate_receipt_pdf(
-        self,
-        cart_items: List[Dict[str, Any]],
-        total: Decimal,
-        points_spent: int = 0,
-        points_earned: int = 0,
-        loyalty_balance_after: Optional[int] = None,
+            self,
+            cart_items: List[Dict[str, Any]],
+            total: Decimal,
+            points_spent: int = 0,
+            points_earned: int = 0,
+            loyalty_balance_after: Optional[int] = None,
     ) -> None:
         try:
             if not cart_items:

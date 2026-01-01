@@ -1,30 +1,47 @@
-# Python bytecode
+# --- Python & Venv ---
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Virtual environments
-.venv/
+*.pyc
 venv/
 env/
+.env
+.venv/
 
-# IDE / editor settings
-.idea/
+# --- IDE Settings ---
 .vscode/
-*.iml
+.idea/
+*.swp
 
-# OS-specific files
+# --- Database (Hybrid Strategy Updates) ---
+# Main SQLite database (Do NOT track this!)
+hypermarket.db
+# SQLite temporary files
+*.db-wal
+*.db-shm
+*.db-journal
+
+# --- Backups (DatabaseManager Updates) ---
+# User generated backups
+*.backup
+*.dump
+*.sql
+hypermarket_backup.db
+*_backup.db
+
+# --- Configuration (SettingsView Updates) ---
+# Stores local shop info (Name, Phone, etc.)
+config.json
+config.json.tmp
+
+# --- Generated Outputs (Receipts & Shift Reports) ---
+*.pdf
+# If you save reports in specific folders:
+reports/
+receipts/
+
+# --- Logs ---
+logs/
+*.log
+
+# --- OS Specific ---
 .DS_Store
 Thumbs.db
-
-# MyPy / Pytest / coverage (optional, if used)
-.mypy_cache/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Qt Designer backup files
-*.ui~
-
-# Application logs
-logs/hms_app.log

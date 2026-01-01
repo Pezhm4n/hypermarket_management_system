@@ -397,25 +397,182 @@ class SalesController:
             logger.error("Error in start_shift: %s", e, exc_info=True)
             raise
 
-    def close_shift(self, shift_id: int) -> dict:
+    # ------------------------------------------------------------------ #
+    # Shift totals / reconciliation helpers
+    # ------------------------------------------------------------------ #
+    def _compute_shift_payment_totals(self, session: Session, shift: Shift) -> dict:
         """
-        Close the given shift and return a summary dictionary:
+        Internal helper to compute payment totals for a shift, grouped by
+        payment method, and derive the system-expected cash in drawer.
+        """
+        try:
+            try:
+                start_cash = Decimal(str(shift.StartCash or 0)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            except Exception:
+                start_cash = Decimal("0.00")
 
+            total_cash_sales = Decimal("0.00")
+            cash_refunds = Decimal("0.00")
+            total_card_sales = Decimal("0.00")
+            total_online_sales = Decimal("0.00")
+
+            payments = (
+                session.query(
+                    Payment.Method,
+                    Payment.Amount,
+                )
+                .join(Invoice, Payment.InvID == Invoice.InvID)
+                .filter(
+                    Invoice.ShiftID == shift.ShiftID,
+                    Invoice.Status != "Void",
+                )
+                .all()
+            )
+
+            for method, amount_raw in payments:
+                method_norm = (method or "").strip().lower()
+                try:
+                    amount_dec = Decimal(str(amount_raw or 0)).quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                except Exception:
+                    amount_dec = Decimal("0.00")
+
+                if method_norm == "cash":
+                    if amount_dec > 0:
+                        total_cash_sales += amount_dec
+                    elif amount_dec < 0:
+                        # Treat negative cash payments as refunds
+                        cash_refunds += -amount_dec
+                elif method_norm == "card":
+                    if amount_dec > 0:
+                        total_card_sales += amount_dec
+                elif method_norm == "online":
+                    if amount_dec > 0:
+                        total_online_sales += amount_dec
+                else:
+                    # Unknown methods are ignored in cash reconciliation but
+                    # still counted in overall sales elsewhere.
+                    continue
+
+            system_expected_cash = (start_cash + total_cash_sales - cash_refunds).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            return {
+                "start_cash": start_cash,
+                "total_cash_sales": total_cash_sales.quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                ),
+                "cash_refunds": cash_refunds.quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                ),
+                "total_card_sales": total_card_sales.quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                ),
+                "total_online_sales": total_online_sales.quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                ),
+                "system_expected_cash": system_expected_cash,
+            }
+        except Exception as e:
+            logger.error(
+                "Error computing shift payment totals for ShiftID=%s: %s",
+                getattr(shift, "ShiftID", None),
+                e,
+                exc_info=True,
+            )
+            raise
+
+    def calculate_shift_totals(self, shift_id: int) -> dict:
+        """
+        Calculate summarized totals for the given shift without closing it.
+
+        Returns a dictionary with:
             {
                 "shift_id": int,
-                "total_sales": Decimal,
-                "invoice_count": int,
-                "cash_float": Decimal,
-                "final_balance": Decimal,
                 "start_cash": Decimal,
-                "start_time": datetime | None,
-                "end_time": datetime | None,
-                "employee_name": str | None,
-                "items": list[dict],
+                "total_cash_sales": Decimal,
+                "cash_refunds": Decimal,
+                "total_card_sales": Decimal,
+                "total_online_sales": Decimal,
+                "system_expected_cash": Decimal,
             }
         """
         try:
-            logger.info("Closing shift ShiftID=%s.", shift_id)
+            with self._get_session() as session:
+                shift = session.get(Shift, shift_id)
+                if shift is None:
+                    raise ValueError(f"Shift {shift_id} not found.")
+
+                totals = self._compute_shift_payment_totals(session, shift)
+                result = {"shift_id": shift_id}
+                result.update(totals)
+
+                logger.info(
+                    "Calculated shift totals for ShiftID=%s: %s",
+                    shift_id,
+                    result,
+                )
+                return result
+        except Exception as e:
+            logger.error("Error in calculate_shift_totals: %s", e, exc_info=True)
+            raise
+
+    def close_shift(self, shift_id: int, counted_cash: Any) -> dict:
+        """
+        Close the given shift using a counted cash amount and return a
+        reconciliation / Z-report summary.
+
+        Args:
+            shift_id: ID of the shift to close.
+            counted_cash: Physical cash counted by the cashier.
+
+        Returns:
+            Dictionary containing:
+                {
+                    "shift_id": int,
+                    "total_sales": Decimal,
+                    "invoice_count": int,
+                    "cash_float": Decimal,
+                    "final_balance": Decimal,          # alias of system_expected_cash
+                    "start_cash": Decimal,
+                    "start_time": datetime | None,
+                    "end_time": datetime | None,
+                    "employee_name": str | None,
+                    "items": list[dict],
+                    "total_cash_sales": Decimal,
+                    "cash_refunds": Decimal,
+                    "total_card_sales": Decimal,
+                    "total_online_sales": Decimal,
+                    "system_expected_cash": Decimal,
+                    "counted_cash": Decimal,
+                    "variance": Decimal,               # counted - expected
+                }
+        """
+        try:
+            logger.info(
+                "Closing shift ShiftID=%s with counted_cash=%s.",
+                shift_id,
+                counted_cash,
+            )
+
+            try:
+                counted_dec = Decimal(str(counted_cash or 0)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            except Exception as exc:
+                raise ValueError("Invalid counted cash amount.") from exc
 
             with self._get_session() as session:
                 with session.begin():
@@ -424,11 +581,24 @@ class SalesController:
                         raise ValueError(f"Shift {shift_id} not found.")
 
                     if shift.Status == "Closed":
-                        logger.warning(
-                            "close_shift called for already closed ShiftID=%s.",
-                            shift_id,
-                        )
+                        raise ValueError("Shift is already closed.")
 
+                    payment_totals = self._compute_shift_payment_totals(session, shift)
+
+                    start_cash = payment_totals["start_cash"]
+                    total_cash_sales = payment_totals["total_cash_sales"]
+                    cash_refunds = payment_totals["cash_refunds"]
+                    total_card_sales = payment_totals["total_card_sales"]
+                    total_online_sales = payment_totals["total_online_sales"]
+                    system_expected_cash = payment_totals["system_expected_cash"]
+
+                    cash_float = (
+                        Decimal(str(shift.CashFloat))
+                        if getattr(shift, "CashFloat", None) is not None
+                        else Decimal("0.00")
+                    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+                    # Overall sales and invoice count for the shift
                     total_sales_raw, invoice_count = (
                         session.query(
                             func.coalesce(func.sum(Invoice.TotalAmount), 0),
@@ -447,23 +617,14 @@ class SalesController:
                     )
                     invoice_count_int = int(invoice_count or 0)
 
-                    start_cash = (
-                        Decimal(str(shift.StartCash))
-                        if shift.StartCash is not None
-                        else Decimal("0")
-                    )
-                    cash_float = (
-                        Decimal(str(shift.CashFloat))
-                        if getattr(shift, "CashFloat", None) is not None
-                        else Decimal("0")
-                    )
-
-                    final_balance = (start_cash + total_sales).quantize(
+                    # Update shift record with reconciliation data
+                    variance = (counted_dec - system_expected_cash).quantize(
                         Decimal("0.01"),
                         rounding=ROUND_HALF_UP,
                     )
 
-                    shift.SystemCalculatedCash = final_balance
+                    shift.SystemCalculatedCash = system_expected_cash
+                    shift.EndCash = counted_dec
                     closed_at = datetime.utcnow()
                     shift.EndTime = closed_at
                     shift.Status = "Closed"
@@ -523,25 +684,40 @@ class SalesController:
                         full_name = f"{first} {last}".strip()
                         employee_name = full_name or None
 
-                    logger.info(
-                        "Shift %s closed. Total sales=%s, invoice_count=%s.",
-                        shift_id,
-                        total_sales,
-                        invoice_count_int,
-                    )
-
-                    return {
+                    summary = {
                         "shift_id": shift_id,
                         "total_sales": total_sales,
                         "invoice_count": invoice_count_int,
                         "cash_float": cash_float,
-                        "final_balance": final_balance,
+                        "final_balance": system_expected_cash,
                         "start_cash": start_cash,
                         "start_time": shift.StartTime,
                         "end_time": shift.EndTime,
                         "employee_name": employee_name,
                         "items": items,
+                        "total_cash_sales": total_cash_sales,
+                        "cash_refunds": cash_refunds,
+                        "total_card_sales": total_card_sales,
+                        "total_online_sales": total_online_sales,
+                        "system_expected_cash": system_expected_cash,
+                        "counted_cash": counted_dec,
+                        "variance": variance,
                     }
+
+                    logger.info(
+                        (
+                            "Shift %s closed. Total sales=%s, invoices=%s, "
+                            "expected_cash=%s, counted_cash=%s, variance=%s."
+                        ),
+                        shift_id,
+                        total_sales,
+                        invoice_count_int,
+                        system_expected_cash,
+                        counted_dec,
+                        variance,
+                    )
+
+                    return summary
         except Exception as e:
             logger.error("Error in close_shift: %s", e, exc_info=True)
             raise
