@@ -3,12 +3,17 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple
 
 import json
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.config import (
+    LOYALTY_EARN_RATE,
+    LOYALTY_EARN_THRESHOLD,
+    LOYALTY_POINT_VALUE,
+)
 from app.database import SessionLocal
 from app.models.models import (
     Customer,
@@ -573,6 +578,7 @@ class SalesController:
         cust_id: Optional[int] = None,
         is_refund: bool = False,
         discount_amount: Any = 0,
+        loyalty_points_to_use: Optional[int] = None,
     ) -> bool:
         """
         Perform a complete checkout operation in a single DB transaction.
@@ -584,6 +590,7 @@ class SalesController:
             * Deduct or add inventory depending on transaction type.
             * Create InvoiceItem rows per product/batch.
             * Create a Payment row linked to the Invoice.
+            * Update customer loyalty points for accrual/redemption.
 
         Raises ValueError for business-rule violations (e.g. insufficient stock
         or missing shift). Any exception aborts the transaction.
@@ -594,12 +601,13 @@ class SalesController:
                 raise ValueError("Cart is empty.")
 
             logger.info(
-                "Starting checkout: shift_id=%s, items=%d, payment_method=%s, is_refund=%s, discount=%s",
+                "Starting checkout: shift_id=%s, items=%d, payment_method=%s, is_refund=%s, discount=%s, loyalty_points=%s",
                 shift_id,
                 len(cart_items_list),
                 payment_method,
                 is_refund,
                 discount_amount,
+                loyalty_points_to_use,
             )
 
             # Subtotal from cart
@@ -626,6 +634,14 @@ class SalesController:
             if is_refund and final_total > 0:
                 final_total = -final_total
 
+            # Normalize requested loyalty points
+            try:
+                loyalty_points_int = int(loyalty_points_to_use or 0)
+            except Exception:
+                loyalty_points_int = 0
+            if loyalty_points_int < 0:
+                loyalty_points_int = 0
+
             # total_amount is accepted but not trusted blindly; we base persistence
             # on the calculated final total.
             _ = total_amount  # kept for signature compatibility
@@ -640,6 +656,10 @@ class SalesController:
 
                     if shift.Status != "Open":
                         raise ValueError("Cannot perform checkout on a closed shift.")
+
+                    customer: Optional[Customer] = None
+                    if cust_id is not None:
+                        customer = session.get(Customer, cust_id)
 
                     # Create invoice
                     invoice = Invoice(
@@ -779,6 +799,61 @@ class SalesController:
                     )
                     session.add(payment)
 
+                    # Loyalty: redemption and accrual for normal sales with a known customer
+                    if not is_refund and customer is not None:
+                        try:
+                            existing_points = int(customer.LoyaltyPoints or 0)
+                        except Exception:
+                            existing_points = 0
+                        if existing_points < 0:
+                            existing_points = 0
+
+                        points_spent = 0
+                        points_earned = 0
+
+                        if loyalty_points_int > 0:
+                            if loyalty_points_int > existing_points:
+                                raise ValueError(
+                                    "Customer does not have enough loyalty points."
+                                )
+                            points_spent = loyalty_points_int
+
+                        # Net total used for accrual is the final amount paid (non-negative)
+                        net_total = final_total
+                        if net_total < 0:
+                            net_total = Decimal("0")
+
+                        if net_total > 0 and LOYALTY_EARN_THRESHOLD > 0:
+                            threshold = Decimal(str(LOYALTY_EARN_THRESHOLD))
+                            try:
+                                blocks = int(net_total // threshold)
+                            except Exception:
+                                blocks = 0
+                            if blocks > 0 and LOYALTY_EARN_RATE > 0:
+                                points_earned = blocks * LOYALTY_EARN_RATE
+
+                        new_balance = existing_points - points_spent + points_earned
+                        if new_balance < 0:
+                            new_balance = 0
+
+                        customer.LoyaltyPoints = new_balance
+
+                        if points_spent > 0:
+                            logger.info(
+                                "Customer %s spent %s loyalty point(s). New balance=%s",
+                                cust_id,
+                                points_spent,
+                                new_balance,
+                            )
+                        if points_earned > 0:
+                            logger.info(
+                                "Customer %s earned %s loyalty point(s) on net_total=%s. New balance=%s",
+                                cust_id,
+                                points_earned,
+                                net_total,
+                                new_balance,
+                            )
+
             logger.info(
                 "Checkout completed successfully for shift_id=%s, total=%s, discount=%s",
                 shift_id,
@@ -789,6 +864,189 @@ class SalesController:
             return True
         except Exception as e:
             logger.error("Error in process_checkout: %s", e, exc_info=True)
+            raise
+
+    def get_customer_loyalty_points(self, cust_id: Optional[int]) -> int:
+        """
+        Return the current loyalty points balance for the given customer.
+        """
+        try:
+            if cust_id is None:
+                return 0
+
+            with self._get_session() as session:
+                customer = session.get(Customer, cust_id)
+                if customer is None:
+                    return 0
+                try:
+                    points = int(customer.LoyaltyPoints or 0)
+                except Exception:
+                    points = 0
+                return max(points, 0)
+        except Exception as e:
+            logger.error(
+                "Error in get_customer_loyalty_points for CustID=%s: %s",
+                cust_id,
+                e,
+                exc_info=True,
+            )
+            raise
+
+    def calculate_max_redeemable_discount(
+        self,
+        cust_id: Optional[int],
+        invoice_total: Any,
+    ) -> Tuple[int, Decimal]:
+        """
+        Calculate how many loyalty points can be redeemed for a given invoice
+        total and the corresponding monetary discount.
+
+        Returns (max_points_to_use, discount_amount).
+        """
+        try:
+            if cust_id is None:
+                return 0, Decimal("0")
+
+            try:
+                total_dec = Decimal(str(invoice_total or 0)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            except Exception:
+                total_dec = Decimal("0.00")
+
+            if total_dec <= 0:
+                return 0, Decimal("0")
+
+            with self._get_session() as session:
+                customer = session.get(Customer, cust_id)
+                if customer is None:
+                    return 0, Decimal("0")
+
+                try:
+                    current_points = int(customer.LoyaltyPoints or 0)
+                except Exception:
+                    current_points = 0
+                if current_points <= 0:
+                    return 0, Decimal("0")
+
+                point_value = Decimal(str(LOYALTY_POINT_VALUE))
+                max_discount_by_points = point_value * Decimal(current_points)
+
+                effective_discount = min(max_discount_by_points, total_dec)
+                if effective_discount <= 0:
+                    return 0, Decimal("0")
+
+                max_points_by_amount = int(effective_discount // point_value)
+                if max_points_by_amount <= 0:
+                    return 0, Decimal("0")
+
+                discount_amount = point_value * Decimal(max_points_by_amount)
+                return max_points_by_amount, discount_amount.quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+        except Exception as e:
+            logger.error(
+                "Error in calculate_max_redeemable_discount for CustID=%s: %s",
+                cust_id,
+                e,
+                exc_info=True,
+            )
+            raise
+
+    def apply_loyalty_discount(
+        self,
+        invoice_id: int,
+        points_to_use: int,
+    ) -> Decimal:
+        """
+        Apply a loyalty discount to an existing invoice and deduct points from
+        the associated customer.
+
+        Returns the discount amount applied (in currency units).
+        """
+        try:
+            if points_to_use <= 0:
+                return Decimal("0")
+
+            with self._get_session() as session:
+                with session.begin():
+                    invoice = session.get(Invoice, invoice_id)
+                    if invoice is None:
+                        raise ValueError("Invoice not found.")
+
+                    if invoice.Status == "Void":
+                        raise ValueError("Cannot apply loyalty discount to a void invoice.")
+
+                    if invoice.CustID is None:
+                        raise ValueError(
+                            "Cannot apply loyalty discount to an invoice without a customer."
+                        )
+
+                    customer = session.get(Customer, invoice.CustID)
+                    if customer is None:
+                        raise ValueError("Customer not found for invoice.")
+
+                    try:
+                        current_points = int(customer.LoyaltyPoints or 0)
+                    except Exception:
+                        current_points = 0
+                    if current_points < 0:
+                        current_points = 0
+
+                    if points_to_use > current_points:
+                        raise ValueError("Customer does not have enough loyalty points.")
+
+                    point_value = Decimal(str(LOYALTY_POINT_VALUE))
+                    requested_discount = point_value * Decimal(points_to_use)
+
+                    try:
+                        invoice_total = Decimal(str(invoice.TotalAmount or 0))
+                    except Exception:
+                        invoice_total = Decimal("0.00")
+
+                    if invoice_total <= 0:
+                        return Decimal("0")
+
+                    max_discount = invoice_total
+                    if requested_discount > max_discount:
+                        requested_discount = max_discount
+                        points_to_use = int(requested_discount // point_value)
+
+                    if points_to_use <= 0 or requested_discount <= 0:
+                        return Decimal("0")
+
+                    # Apply discount and update invoice totals
+                    invoice.Discount = requested_discount.quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                    invoice.TotalAmount = (invoice_total - requested_discount).quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+
+                    # Deduct points
+                    new_balance = current_points - points_to_use
+                    if new_balance < 0:
+                        new_balance = 0
+                    customer.LoyaltyPoints = new_balance
+
+                    logger.info(
+                        "Applied loyalty discount on InvoiceID=%s: points_used=%s, discount=%s, new_balance=%s",
+                        invoice_id,
+                        points_to_use,
+                        requested_discount,
+                        new_balance,
+                    )
+
+                    return requested_discount.quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+        except Exception as e:
+            logger.error("Error in apply_loyalty_discount: %s", e, exc_info=True)
             raise
 
     # --------------------------------------------------------------------- #

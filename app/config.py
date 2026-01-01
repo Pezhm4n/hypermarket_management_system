@@ -9,6 +9,17 @@ BASE_DIR: Path = Path(__file__).resolve().parent
 ROOT_DIR: Path = BASE_DIR.parent
 
 # ---------------------------------------------------------------------------
+# Loyalty / customer rewards
+# ---------------------------------------------------------------------------
+
+# Every LOYALTY_EARN_THRESHOLD units of net spending earns LOYALTY_EARN_RATE point(s).
+LOYALTY_EARN_THRESHOLD: int = 100_000
+# Monetary value of a single loyalty point.
+LOYALTY_POINT_VALUE: int = 1_000
+# Points awarded per threshold of spending.
+LOYALTY_EARN_RATE: int = 1
+
+# ---------------------------------------------------------------------------
 # Hybrid database strategy
 # ---------------------------------------------------------------------------
 

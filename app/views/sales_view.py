@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.config import LOYALTY_POINT_VALUE
 from app.controllers.sales_controller import SalesController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
@@ -177,11 +178,15 @@ class SalesView(QWidget):
         self._selected_customer_id: Optional[int] = None
         self._selected_customer_name: str = ""
         self._return_mode: bool = False
+        self._loyalty_points_balance: int = 0
+        self._loyalty_points_to_redeem: int = 0
+        self._loyalty_discount_value: Decimal = Decimal("0")
 
         uic.loadUi("app/views/ui/sales_view.ui", self)
 
         self._inject_scan_barcode_button()
         self._inject_customer_controls()
+        self._inject_loyalty_controls()
         self._inject_return_mode_toggle()
         self._inject_close_shift_button()
         self._inject_clear_cart_button()
@@ -265,6 +270,37 @@ class SalesView(QWidget):
                 self.btnSelectCustomer.setParent(self)
         except Exception as e:
             logger.error("Error in _inject_customer_controls: %s", e, exc_info=True)
+
+    def _inject_loyalty_controls(self) -> None:
+        """
+        Inject loyalty points info label and redemption spinbox near the customer controls.
+        """
+        try:
+            top_layout = getattr(self, "horizontalLayout_top", None)
+            if top_layout is None:
+                logger.warning(
+                    "SalesView top layout not found; cannot inject loyalty controls."
+                )
+                return
+
+            self.lblLoyaltyInfo = getattr(self, "lblLoyaltyInfo", None)
+            self.spinRedeemPoints = getattr(self, "spinRedeemPoints", None)
+
+            if self.lblLoyaltyInfo is None:
+                self.lblLoyaltyInfo = QLabel(self)
+                self.lblLoyaltyInfo.setObjectName("lblLoyaltyInfo")
+
+            if self.spinRedeemPoints is None:
+                self.spinRedeemPoints = QSpinBox(self)
+                self.spinRedeemPoints.setObjectName("spinRedeemPoints")
+                self.spinRedeemPoints.setMinimum(0)
+                self.spinRedeemPoints.setMaximum(0)
+                self.spinRedeemPoints.setValue(0)
+
+            top_layout.addWidget(self.lblLoyaltyInfo)
+            top_layout.addWidget(self.spinRedeemPoints)
+        except Exception as e:
+            logger.error("Error in _inject_loyalty_controls: %s", e, exc_info=True)
 
     def _inject_return_mode_toggle(self) -> None:
         try:
@@ -442,6 +478,7 @@ class SalesView(QWidget):
                 )
 
             self._update_customer_label()
+            self._update_loyalty_label()
             self._setup_cart_table()
             self._reset_total()
         except Exception as e:
@@ -525,6 +562,8 @@ class SalesView(QWidget):
             self.chkReturnMode.toggled.connect(self._on_return_mode_toggled)
         if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
             self.spinDiscount.valueChanged.connect(lambda _: self._recalculate_total())
+        if hasattr(self, "spinRedeemPoints") and self.spinRedeemPoints is not None:
+            self.spinRedeemPoints.valueChanged.connect(self._on_redeem_points_changed)
 
     # ------------------------------------------------------------------ #
     # Helpers
@@ -550,6 +589,30 @@ class SalesView(QWidget):
         except Exception as e:
             logger.error("Error in _update_customer_label: %s", e, exc_info=True)
 
+    def _update_loyalty_label(self) -> None:
+        try:
+            if not hasattr(self, "lblLoyaltyInfo"):
+                return
+
+            points = max(int(self._loyalty_points_balance or 0), 0)
+            try:
+                value_dec = Decimal(points) * Decimal(str(LOYALTY_POINT_VALUE))
+            except Exception:
+                value_dec = Decimal("0")
+
+            template = self._translator.get(
+                "sales.loyalty.label",
+                "Loyalty Points: {points} (Value: {value})",
+            )
+            self.lblLoyaltyInfo.setText(
+                template.format(
+                    points=points,
+                    value=self._format_money(value_dec),
+                )
+            )
+        except Exception as e:
+            logger.error("Error in _update_loyalty_label: %s", e, exc_info=True)
+
     def _on_select_customer_clicked(self) -> None:
         try:
             result = CustomersDialog.select_customer(
@@ -562,6 +625,7 @@ class SalesView(QWidget):
             self._selected_customer_id = cust_id
             self._selected_customer_name = name
             self._update_customer_label()
+            self._refresh_loyalty_info()
         except Exception as e:
             logger.error("Error in _on_select_customer_clicked: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
@@ -615,6 +679,17 @@ class SalesView(QWidget):
                     self.spinDiscount.setEnabled(True)
                 self.spinDiscount.blockSignals(False)
 
+            # Disable loyalty redemption in return mode
+            if hasattr(self, "spinRedeemPoints") and self.spinRedeemPoints is not None:
+                self.spinRedeemPoints.blockSignals(True)
+                self.spinRedeemPoints.setValue(0)
+                self.spinRedeemPoints.setEnabled(
+                    not checked and self._selected_customer_id is not None
+                )
+                self.spinRedeemPoints.blockSignals(False)
+            self._loyalty_points_to_redeem = 0
+            self._loyalty_discount_value = Decimal("0")
+
             # Update prefixes and row totals
             for row in range(self.tblCart.rowCount()):
                 spin = self._get_quantity_spinbox(row)
@@ -654,6 +729,55 @@ class SalesView(QWidget):
         except Exception as e:
             logger.error("Error in _on_hold_order_clicked: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    def _refresh_loyalty_info(self) -> None:
+        """
+        Refresh loyalty balance and UI state whenever the selected customer changes.
+        """
+        try:
+            if not hasattr(self, "lblLoyaltyInfo"):
+                return
+
+            if self._selected_customer_id is None:
+                self._loyalty_points_balance = 0
+                self._loyalty_points_to_redeem = 0
+                self._loyalty_discount_value = Decimal("0")
+                if hasattr(self, "spinRedeemPoints") and self.spinRedeemPoints is not None:
+                    self.spinRedeemPoints.blockSignals(True)
+                    self.spinRedeemPoints.setMaximum(0)
+                    self.spinRedeemPoints.setValue(0)
+                    self.spinRedeemPoints.setEnabled(False)
+                    self.spinRedeemPoints.blockSignals(False)
+                self._update_loyalty_label()
+                self._recalculate_total()
+                return
+
+            points = 0
+            try:
+                points = self._controller.get_customer_loyalty_points(self._selected_customer_id)
+            except Exception as exc:
+                logger.error(
+                    "Error fetching loyalty points for CustID=%s: %s",
+                    self._selected_customer_id,
+                    exc,
+                    exc_info=True,
+                )
+                points = 0
+
+            self._loyalty_points_balance = max(int(points or 0), 0)
+
+            if hasattr(self, "spinRedeemPoints") and self.spinRedeemPoints is not None:
+                self.spinRedeemPoints.blockSignals(True)
+                self.spinRedeemPoints.setMaximum(self._loyalty_points_balance)
+                if self.spinRedeemPoints.value() > self._loyalty_points_balance:
+                    self.spinRedeemPoints.setValue(self._loyalty_points_balance)
+                self.spinRedeemPoints.setEnabled(True)
+                self.spinRedeemPoints.blockSignals(False)
+
+            self._update_loyalty_label()
+            self._recalculate_total()
+        except Exception as e:
+            logger.error("Error in _refresh_loyalty_info: %s", e, exc_info=True)
 
     def _on_recall_order_clicked(self) -> None:
         try:
@@ -1012,7 +1136,7 @@ class SalesView(QWidget):
 
         subtotal = self._controller.calculate_cart_total(cart_items)
 
-        # Handle discount logic
+        # Handle manual discount logic
         discount_value = Decimal("0")
         if (
             not self._return_mode
@@ -1048,7 +1172,81 @@ class SalesView(QWidget):
                     pass
             discount_value = Decimal("0")
 
-        total = (subtotal - discount_value).quantize(
+        # Loyalty discount logic
+        loyalty_discount = Decimal("0")
+        points_to_use = 0
+
+        if (
+            not self._return_mode
+            and self._selected_customer_id is not None
+            and hasattr(self, "spinRedeemPoints")
+            and self.spinRedeemPoints is not None
+            and self.spinRedeemPoints.isEnabled()
+        ):
+            try:
+                requested_points = int(self.spinRedeemPoints.value())
+            except Exception:
+                requested_points = 0
+
+            if requested_points < 0:
+                requested_points = 0
+
+            base_total_for_loyalty = (subtotal - discount_value).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            if base_total_for_loyalty > 0 and requested_points > 0:
+                try:
+                    max_points, _ = self._controller.calculate_max_redeemable_discount(
+                        self._selected_customer_id,
+                        base_total_for_loyalty,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Error calculating max redeemable discount: %s",
+                        exc,
+                        exc_info=True,
+                    )
+                    max_points = 0
+
+                points_to_use = min(requested_points, max_points)
+                if points_to_use > 0:
+                    try:
+                        loyalty_discount = (
+                            Decimal(points_to_use) * Decimal(str(LOYALTY_POINT_VALUE))
+                        )
+                    except Exception:
+                        loyalty_discount = Decimal("0")
+
+                # Clamp spin box to effective points_to_use
+                try:
+                    self.spinRedeemPoints.blockSignals(True)
+                    if max_points < 0:
+                        max_points = 0
+                    self.spinRedeemPoints.setMaximum(max_points)
+                    self.spinRedeemPoints.setValue(points_to_use)
+                    self.spinRedeemPoints.blockSignals(False)
+                except Exception:
+                    pass
+            else:
+                points_to_use = 0
+                loyalty_discount = Decimal("0")
+        else:
+            points_to_use = 0
+            loyalty_discount = Decimal("0")
+            if hasattr(self, "spinRedeemPoints") and self.spinRedeemPoints is not None:
+                try:
+                    self.spinRedeemPoints.blockSignals(True)
+                    self.spinRedeemPoints.setValue(0)
+                    self.spinRedeemPoints.blockSignals(False)
+                except Exception:
+                    pass
+
+        self._loyalty_points_to_redeem = points_to_use
+        self._loyalty_discount_value = loyalty_discount
+
+        total = (subtotal - discount_value - loyalty_discount).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,
         )
