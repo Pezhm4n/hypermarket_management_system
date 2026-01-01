@@ -15,6 +15,28 @@
        </property>
       </widget>
      </item>
+     <!-- ✅ دکمه گزارش انقضا -->
+     <item>
+      <widget class="QPushButton" name="btnExpiryReport">
+       <property name="text">
+        <string>Expiry Report</string>
+       </property>
+       <property name="toolTip">
+        <string>View products near expiry</string>
+       </property>
+      </widget>
+     </item>
+     <!-- ✅ دکمه گزارش موجودی -->
+     <item>
+      <widget class="QPushButton" name="btnInventoryReport">
+       <property name="text">
+        <string>Inventory Report</string>
+       </property>
+       <property name="toolTip">
+        <string>View complete inventory summary</string>
+       </property>
+      </widget>
+     </item>
      <item>
       <spacer name="horizontalSpacer_top">
        <property name="orientation">

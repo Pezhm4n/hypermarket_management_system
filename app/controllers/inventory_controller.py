@@ -610,3 +610,136 @@ class InventoryController:
                     exc_info=True,
                 )
                 return False
+    
+    def get_products_near_expiry(
+        self,
+        days_threshold: int = 30,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get list of products with batches expiring within the specified days.
+
+        Args:
+            days_threshold: Number of days to look ahead (default 30)
+
+        Returns:
+            List of dictionaries containing product and batch info
+        """
+        from datetime import date, timedelta
+
+        with self._get_session() as session:
+            cutoff_date = date.today() + timedelta(days=days_threshold)
+
+            batches = (
+                session.query(
+                    Product.ProdID,
+                    Product.Name,
+                    Product.Barcode,
+                    InventoryBatch.BatchID,
+                    InventoryBatch.BatchNumber,
+                    InventoryBatch.CurrentQuantity,
+                    InventoryBatch.ExpiryDate,
+                )
+                .join(Product, InventoryBatch.ProdID == Product.ProdID)
+                .filter(
+                    Product.IsActive == True,
+                    InventoryBatch.CurrentQuantity > 0,
+                    InventoryBatch.ExpiryDate.isnot(None),
+                    InventoryBatch.ExpiryDate <= cutoff_date,
+                )
+                .order_by(InventoryBatch.ExpiryDate.asc())
+                .all()
+            )
+
+            results: List[Dict[str, Any]] = []
+            today = date.today()
+
+            for batch in batches:
+                expiry_date = batch.ExpiryDate
+                if isinstance(expiry_date, datetime):
+                    expiry_date = expiry_date.date()
+
+                days_left = (expiry_date - today).days if expiry_date else 0
+
+                results.append(
+                    {
+                        "prod_id": batch.ProdID,
+                        "name": batch.Name,
+                        "barcode": batch.Barcode or "",
+                        "batch_id": batch.BatchID,
+                        "batch_number": batch.BatchNumber or f"#{batch.BatchID}",
+                        "quantity": Decimal(str(batch.CurrentQuantity)),
+                        "expiry_date": expiry_date,
+                        "days_left": days_left,
+                    }
+                )
+
+            return results
+
+    def get_inventory_summary(self) -> Dict[str, Any]:
+        """
+        Get complete inventory summary for reporting.
+
+        Returns:
+            Dictionary containing inventory summary with total value
+        """
+        with self._get_session() as session:
+            products = (
+                session.query(
+                    Product.ProdID,
+                    Product.Name,
+                    Product.Barcode,
+                    Category.Name.label("CategoryName"),
+                    Product.BasePrice,
+                    Product.Unit,
+                    func.coalesce(
+                        func.sum(InventoryBatch.CurrentQuantity), 0
+                    ).label("TotalStock"),
+                    func.avg(InventoryBatch.BuyPrice).label("AvgBuyPrice"),
+                )
+                .join(Category, Product.CatID == Category.CatID)
+                .outerjoin(InventoryBatch, InventoryBatch.ProdID == Product.ProdID)
+                .filter(Product.IsActive == True)
+                .group_by(
+                    Product.ProdID,
+                    Product.Name,
+                    Product.Barcode,
+                    Category.Name,
+                    Product.BasePrice,
+                    Product.Unit,
+                )
+                .order_by(Category.Name, Product.Name)
+                .all()
+            )
+
+            items: List[Dict[str, Any]] = []
+            total_value = Decimal("0")
+
+            for prod in products:
+                total_stock = Decimal(str(prod.TotalStock))
+                avg_buy_price = (
+                    Decimal(str(prod.AvgBuyPrice))
+                    if prod.AvgBuyPrice
+                    else Decimal("0")
+                )
+                value = total_stock * avg_buy_price
+
+                items.append(
+                    {
+                        "prod_id": prod.ProdID,
+                        "name": prod.Name,
+                        "barcode": prod.Barcode or "",
+                        "category": prod.CategoryName,
+                        "unit": prod.Unit or "Pcs",
+                        "quantity": total_stock,
+                        "avg_buy_price": avg_buy_price,
+                        "base_price": Decimal(str(prod.BasePrice or 0)),
+                        "total_value": value,
+                    }
+                )
+                total_value += value
+
+            return {
+                "items": items,
+                "total_items": len(items),
+                "total_value": total_value,
+            }

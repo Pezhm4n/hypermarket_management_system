@@ -34,6 +34,8 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QTableWidget,
+    QFileDialog
 )
 
 from app.controllers.inventory_controller import InventoryController
@@ -199,6 +201,10 @@ class InventoryView(QWidget):
         """
         self.txtSearchProduct.textChanged.connect(self._on_search_changed)
         self.btnAddProduct.clicked.connect(self._on_add_clicked)
+        
+        # ✅ اضافه کردن سیگنال‌های دکمه‌های گزارش
+        self.btnExpiryReport.clicked.connect(self._open_expiry_report_dialog)
+        self.btnInventoryReport.clicked.connect(self._open_inventory_report_dialog)
 
         self.tblProducts.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tblProducts.customContextMenuRequested.connect(
@@ -214,6 +220,21 @@ class InventoryView(QWidget):
         self.txtSearchProduct.setPlaceholderText(
             self._translator["inventory.search_placeholder"]
         )
+        
+        # ✅ ترجمه دکمه‌های گزارش
+        self.btnExpiryReport.setText(
+            self._translator.get(
+                "inventory.button.expiry_report",
+                "گزارش انقضا",
+            )
+        )
+        self.btnInventoryReport.setText(
+            self._translator.get(
+                "inventory.button.inventory_report",
+                "گزارش موجودی",
+            )
+        )
+        
         self._setup_table()
 
     def refresh(self) -> None:
@@ -382,20 +403,20 @@ class InventoryView(QWidget):
         index = self.tblProducts.indexAt(pos)
         if not index.isValid():
             return
-
+        
         row = index.row()
         if row < 0:
             return
-
+        
         self.tblProducts.selectRow(row)
-
+        
         id_item = self.tblProducts.item(row, 0)
         name_item = self.tblProducts.item(row, 1)
         barcode_item = self.tblProducts.item(row, 2)
-
+        
         if id_item is None:
             return
-
+        
         prod_id_data = id_item.data(Qt.ItemDataRole.UserRole)
         try:
             prod_id = int(
@@ -403,15 +424,15 @@ class InventoryView(QWidget):
             )
         except (TypeError, ValueError):
             return
-
+        
         name = ""
         if name_item is not None and name_item.text():
             name = name_item.text().strip()
-
+        
         barcode = ""
         if barcode_item is not None and barcode_item.text():
             barcode = barcode_item.text().strip()
-
+        
         menu = QMenu(self)
         action_copy = menu.addAction(
             self._translator["inventory.context.copy_barcode"]
@@ -422,7 +443,7 @@ class InventoryView(QWidget):
                 "Generate Barcode",
             )
         )
-
+        
         action_edit = None
         action_delete = None
         action_add_stock = None
@@ -443,10 +464,10 @@ class InventoryView(QWidget):
                     "Record Waste",
                 )
             )
-
+        
         global_pos = self.tblProducts.viewport().mapToGlobal(pos)
         chosen_action = menu.exec(global_pos)
-
+        
         if chosen_action == action_edit:
             self._edit_product(prod_id)
         elif chosen_action == action_delete:
@@ -528,6 +549,9 @@ class InventoryView(QWidget):
 
         self.btnAddProduct.setEnabled(not self._read_only)
         self.btnAddProduct.setVisible(not self._read_only)
+
+        self.btnExpiryReport.setEnabled(True)
+        self.btnInventoryReport.setEnabled(True)
 
         # Context menu reacts to _read_only; no further action needed here.
 
@@ -667,6 +691,44 @@ class InventoryView(QWidget):
                     "inventory.dialog.error.barcode_generate_failed",
                     "Failed to generate barcode image: {details}",
                 ).format(details=str(exc)),
+            )
+
+    def _open_expiry_report_dialog(self) -> None:
+        """
+        Open the expiry report dialog.
+        """
+        try:
+            dialog = ExpiryReportDialog(
+                translator=self._translator,
+                controller=self._controller,
+                parent=self,
+            )
+            dialog.exec()
+        except Exception as exc:
+            logger.exception("Error opening expiry report dialog: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
+
+    def _open_inventory_report_dialog(self) -> None:
+        """
+        Open the inventory report dialog.
+        """
+        try:
+            dialog = InventoryReportDialog(
+                translator=self._translator,
+                controller=self._controller,
+                parent=self,
+            )
+            dialog.exec()
+        except Exception as exc:
+            logger.exception("Error opening inventory report dialog: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
             )
 
 
@@ -1754,3 +1816,757 @@ class ProductDialog(QDialog):
             return
 
         self.accept()
+
+class ExpiryReportDialog(QDialog):
+    """
+    Dialog for displaying products near expiry with filtering options.
+    """
+
+    def __init__(
+        self,
+        translator: TranslationManager,
+        controller: InventoryController,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self._controller = controller
+        self._current_days = 30
+        self._build_ui()
+        self._load_data()
+
+    def _build_ui(self) -> None:
+        """Build the dialog UI."""
+        self.setModal(True)
+        self.setMinimumSize(800, 600)
+        self.setWindowTitle(
+            self._translator.get(
+                "inventory.expiry_report.dialog.title",
+                "Products Near Expiry Report",
+            )
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # Filter controls
+        filter_layout = QHBoxLayout()
+        filter_layout.setSpacing(8)
+
+        lbl_days = QLabel(self)
+        lbl_days.setText(
+            self._translator.get(
+                "inventory.expiry_report.field.days",
+                "Show products expiring within days:",
+            )
+        )
+        filter_layout.addWidget(lbl_days)
+
+        self.spinDays = QSpinBox(self)
+        self.spinDays.setRange(1, 365)
+        self.spinDays.setValue(30)
+        self.spinDays.setSuffix(" days")
+        filter_layout.addWidget(self.spinDays)
+
+        self.btnRefresh = QPushButton(self)
+        self.btnRefresh.setText(
+            self._translator.get(
+                "inventory.expiry_report.button.refresh",
+                "Refresh",
+            )
+        )
+        filter_layout.addWidget(self.btnRefresh)
+
+        filter_layout.addStretch()
+
+        self.btnExportPDF = QPushButton(self)
+        self.btnExportPDF.setText(
+            self._translator.get(
+                "inventory.expiry_report.button.export_pdf",
+                "Export PDF",
+            )
+        )
+        filter_layout.addWidget(self.btnExportPDF)
+
+        layout.addLayout(filter_layout)
+
+        # Table
+        self.tblExpiry = QTableWidget(self)
+        self.tblExpiry.setColumnCount(6)
+        self.tblExpiry.setHorizontalHeaderLabels(
+            [
+                self._translator.get(
+                    "inventory.expiry_report.table.column.name",
+                    "Product Name",
+                ),
+                self._translator.get(
+                    "inventory.expiry_report.table.column.barcode",
+                    "Barcode",
+                ),
+                self._translator.get(
+                    "inventory.expiry_report.table.column.batch",
+                    "Batch",
+                ),
+                self._translator.get(
+                    "inventory.expiry_report.table.column.quantity",
+                    "Quantity",
+                ),
+                self._translator.get(
+                    "inventory.expiry_report.table.column.expiry",
+                    "Expiry Date",
+                ),
+                self._translator.get(
+                    "inventory.expiry_report.table.column.days_left",
+                    "Days Left",
+                ),
+            ]
+        )
+
+        self.tblExpiry.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.tblExpiry.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.tblExpiry.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+
+        if self.tblExpiry.verticalHeader() is not None:
+            self.tblExpiry.verticalHeader().setVisible(False)
+
+        header = self.tblExpiry.horizontalHeader()
+        if header is not None:
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+
+        layout.addWidget(self.tblExpiry)
+
+        # Buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Close, parent=self
+        )
+        layout.addWidget(button_box)
+
+        button_box.rejected.connect(self.reject)
+        self.btnRefresh.clicked.connect(self._load_data)
+        self.btnExportPDF.clicked.connect(self._export_pdf)
+
+    def _load_data(self) -> None:
+        """Load expiry data from controller."""
+        try:
+            self._current_days = self.spinDays.value()
+            products = self._controller.get_products_near_expiry(
+                days_threshold=self._current_days
+            )
+
+            self.tblExpiry.setRowCount(0)
+
+            if not products:
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
+                    self._translator.get(
+                        "inventory.expiry_report.info.no_data",
+                        "No products found with this filter.",
+                    ),
+                )
+                return
+
+            for row_idx, product in enumerate(products):
+                self.tblExpiry.insertRow(row_idx)
+
+                name_item = QTableWidgetItem(product.get("name", ""))
+                barcode_item = QTableWidgetItem(product.get("barcode", ""))
+                batch_item = QTableWidgetItem(product.get("batch_number", ""))
+
+                quantity = product.get("quantity", Decimal("0"))
+                quantity_item = QTableWidgetItem(f"{float(quantity):,.2f}")
+                quantity_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+
+                expiry_date = product.get("expiry_date")
+                expiry_str = (
+                    expiry_date.strftime("%Y-%m-%d")
+                    if expiry_date
+                    else "-"
+                )
+                expiry_item = QTableWidgetItem(expiry_str)
+                expiry_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+                )
+
+                days_left = product.get("days_left", 0)
+                days_item = QTableWidgetItem(str(days_left))
+                days_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+                )
+
+                # Color coding based on days left
+                if days_left <= 7:
+                    color = QColor(255, 100, 100, 150)  # Red
+                elif days_left <= 30:
+                    color = QColor(255, 255, 100, 150)  # Yellow
+                else:
+                    color = QColor(144, 238, 144, 150)  # Light Green
+
+                brush = QBrush(color)
+                for item in [
+                    name_item,
+                    barcode_item,
+                    batch_item,
+                    quantity_item,
+                    expiry_item,
+                    days_item,
+                ]:
+                    item.setBackground(brush)
+
+                self.tblExpiry.setItem(row_idx, 0, name_item)
+                self.tblExpiry.setItem(row_idx, 1, barcode_item)
+                self.tblExpiry.setItem(row_idx, 2, batch_item)
+                self.tblExpiry.setItem(row_idx, 3, quantity_item)
+                self.tblExpiry.setItem(row_idx, 4, expiry_item)
+                self.tblExpiry.setItem(row_idx, 5, days_item)
+
+        except Exception as exc:
+            logger.exception("Error loading expiry report: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
+
+    def _export_pdf(self) -> None:
+        """Export report to PDF."""
+        try:
+            from PyQt6.QtGui import QTextDocument
+            from PyQt6.QtPrintSupport import QPrinter
+            from datetime import datetime
+
+            if self.tblExpiry.rowCount() == 0:
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
+                    self._translator.get(
+                        "inventory.expiry_report.info.no_data",
+                        "No data to export.",
+                    ),
+                )
+                return
+
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                self._translator.get(
+                    "inventory.expiry_report.button.export_pdf",
+                    "Save Expiry Report",
+                ),
+                f"expiry_report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                "PDF Files (*.pdf)",
+            )
+
+            if not filename:
+                return
+
+            # Build HTML
+            rows_html = ""
+            for row in range(self.tblExpiry.rowCount()):
+                name = self.tblExpiry.item(row, 0).text()
+                barcode = self.tblExpiry.item(row, 1).text()
+                batch = self.tblExpiry.item(row, 2).text()
+                qty = self.tblExpiry.item(row, 3).text()
+                expiry = self.tblExpiry.item(row, 4).text()
+                days = self.tblExpiry.item(row, 5).text()
+
+                rows_html += f"""
+                <tr>
+                    <td>{name}</td>
+                    <td>{barcode}</td>
+                    <td>{batch}</td>
+                    <td style="text-align:right;">{qty}</td>
+                    <td style="text-align:center;">{expiry}</td>
+                    <td style="text-align:center;">{days}</td>
+                </tr>
+                """
+
+            html = f"""
+            <html dir="rtl">
+            <head>
+                <meta charset="utf-8" />
+                <style>
+                    body {{
+                        font-family: 'Tahoma', sans-serif;
+                        direction: rtl;
+                    }}
+                    h1 {{ text-align: center; font-size: 16pt; }}
+                    table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-top: 10px;
+                    }}
+                    th, td {{
+                        border: 1px solid #333;
+                        padding: 6px;
+                    }}
+                    th {{
+                        background-color: #0f172a;
+                        color: white;
+                    }}
+                </style>
+            </head>
+            <body>
+                <h1>گزارش کالاهای نزدیک به انقضا</h1>
+                <p>تاریخ گزارش: {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
+                <p>فیلتر: کالاهای زیر {self._current_days} روز</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>نام کالا</th>
+                            <th>بارکد</th>
+                            <th>بچ</th>
+                            <th>موجودی</th>
+                            <th>تاریخ انقضا</th>
+                            <th>روز مانده</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows_html}
+                    </tbody>
+                </table>
+            </body>
+            </html>
+            """
+
+            document = QTextDocument()
+            document.setHtml(html)
+
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(filename)
+
+            document.print(printer)
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator.get(
+                    "inventory.inventory_report.info.exported",
+                    "Report saved successfully.",
+                ),
+            )
+
+        except Exception as exc:
+            logger.exception("Error exporting PDF: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
+
+class InventoryReportDialog(QDialog):
+    """
+    Dialog for displaying complete inventory summary with export options.
+    """
+
+    def __init__(
+        self,
+        translator: TranslationManager,
+        controller: InventoryController,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self._controller = controller
+        self._summary_data = None
+        self._build_ui()
+        self._load_data()
+
+    def _build_ui(self) -> None:
+        """Build the dialog UI."""
+        self.setModal(True)
+        self.setMinimumSize(900, 600)
+        self.setWindowTitle(
+            self._translator.get(
+                "inventory.inventory_report.dialog.title",
+                "Inventory Stock Report",
+            )
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # Header with total value
+        header_layout = QHBoxLayout()
+        self.lblTotalValue = QLabel(self)
+        self.lblTotalValue.setStyleSheet(
+            "font-size: 14pt; font-weight: bold; color: #0f172a;"
+        )
+        header_layout.addWidget(self.lblTotalValue)
+        header_layout.addStretch()
+
+        self.btnExportPDF = QPushButton(self)
+        self.btnExportPDF.setText(
+            self._translator.get(
+                "inventory.inventory_report.button.export_pdf",
+                "Export PDF",
+            )
+        )
+        header_layout.addWidget(self.btnExportPDF)
+
+        self.btnExportExcel = QPushButton(self)
+        self.btnExportExcel.setText(
+            self._translator.get(
+                "inventory.inventory_report.button.export_excel",
+                "Export Excel",
+            )
+        )
+        header_layout.addWidget(self.btnExportExcel)
+
+        layout.addLayout(header_layout)
+
+        # Table
+        self.tblInventory = QTableWidget(self)
+        self.tblInventory.setColumnCount(7)
+        self.tblInventory.setHorizontalHeaderLabels(
+            [
+                self._translator["inventory.table.column.name"],
+                self._translator["inventory.table.column.barcode"],
+                self._translator["inventory.table.column.category"],
+                self._translator.get("inventory.table.column.unit", "Unit"),
+                self._translator["inventory.table.column.total_stock"],
+                self._translator.get(
+                    "inventory.table.column.avg_buy_price", "Avg Buy Price"
+                ),
+                self._translator.get("inventory.table.column.value", "Total Value"),
+            ]
+        )
+
+        self.tblInventory.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.tblInventory.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.tblInventory.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+
+        if self.tblInventory.verticalHeader() is not None:
+            self.tblInventory.verticalHeader().setVisible(False)
+
+        header = self.tblInventory.horizontalHeader()
+        if header is not None:
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(3, 80)
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+
+        layout.addWidget(self.tblInventory)
+
+        # Close button
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Close, parent=self
+        )
+        layout.addWidget(button_box)
+
+        button_box.rejected.connect(self.reject)
+        self.btnExportPDF.clicked.connect(self._export_pdf)
+        self.btnExportExcel.clicked.connect(self._export_excel)
+
+    def _format_money(self, amount: Decimal) -> str:
+        """Format money with thousand separators."""
+        try:
+            return f"{float(amount):,.0f}"
+        except Exception:
+            return "0"
+
+    def _load_data(self) -> None:
+        """Load inventory summary from controller."""
+        try:
+            self._summary_data = self._controller.get_inventory_summary()
+
+            total_value = self._summary_data.get("total_value", Decimal("0"))
+            self.lblTotalValue.setText(
+                self._translator.get(
+                    "inventory.inventory_report.label.total_value",
+                    "Total Inventory Value: {value} Rials",
+                ).format(value=self._format_money(total_value))
+            )
+
+            items = self._summary_data.get("items", [])
+            self.tblInventory.setRowCount(0)
+
+            for row_idx, item in enumerate(items):
+                self.tblInventory.insertRow(row_idx)
+
+                name_item = QTableWidgetItem(item.get("name", ""))
+                barcode_item = QTableWidgetItem(item.get("barcode", ""))
+                category_item = QTableWidgetItem(item.get("category", ""))
+                unit_item = QTableWidgetItem(item.get("unit", "Pcs"))
+
+                quantity = item.get("quantity", Decimal("0"))
+                quantity_item = QTableWidgetItem(self._format_money(quantity))
+                quantity_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+
+                avg_price = item.get("avg_buy_price", Decimal("0"))
+                avg_price_item = QTableWidgetItem(self._format_money(avg_price))
+                avg_price_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+
+                total_val = item.get("total_value", Decimal("0"))
+                value_item = QTableWidgetItem(self._format_money(total_val))
+                value_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+
+                self.tblInventory.setItem(row_idx, 0, name_item)
+                self.tblInventory.setItem(row_idx, 1, barcode_item)
+                self.tblInventory.setItem(row_idx, 2, category_item)
+                self.tblInventory.setItem(row_idx, 3, unit_item)
+                self.tblInventory.setItem(row_idx, 4, quantity_item)
+                self.tblInventory.setItem(row_idx, 5, avg_price_item)
+                self.tblInventory.setItem(row_idx, 6, value_item)
+
+        except Exception as exc:
+            logger.exception("Error loading inventory summary: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
+
+    def _export_pdf(self) -> None:
+        """Export inventory report to PDF."""
+        try:
+            from PyQt6.QtGui import QTextDocument
+            from PyQt6.QtPrintSupport import QPrinter
+            from datetime import datetime
+
+            if not self._summary_data or not self._summary_data.get("items"):
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
+                    self._translator.get(
+                        "reports.export.no_data",
+                        "No data to export.",
+                    ),
+                )
+                return
+
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                self._translator.get(
+                    "inventory.inventory_report.button.export_pdf",
+                    "Save Inventory Report",
+                ),
+                f"inventory_report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                "PDF Files (*.pdf)",
+            )
+
+            if not filename:
+                return
+
+            # Build HTML
+            rows_html = ""
+            for item in self._summary_data["items"]:
+                name = item.get("name", "")
+                barcode = item.get("barcode", "")
+                category = item.get("category", "")
+                unit = item.get("unit", "Pcs")
+                qty = self._format_money(item.get("quantity", Decimal("0")))
+                avg_price = self._format_money(item.get("avg_buy_price", Decimal("0")))
+                value = self._format_money(item.get("total_value", Decimal("0")))
+
+                rows_html += f"""
+                <tr>
+                    <td>{name}</td>
+                    <td>{barcode}</td>
+                    <td>{category}</td>
+                    <td style="text-align:center;">{unit}</td>
+                    <td style="text-align:right;">{qty}</td>
+                    <td style="text-align:right;">{avg_price}</td>
+                    <td style="text-align:right;">{value}</td>
+                </tr>
+                """
+
+            total_value = self._format_money(
+                self._summary_data.get("total_value", Decimal("0"))
+            )
+            total_items = self._summary_data.get("total_items", 0)
+
+            html = f"""
+            <html dir="rtl">
+            <head>
+                <meta charset="utf-8" />
+                <style>
+                    body {{ font-family: 'Tahoma', sans-serif; direction: rtl; }}
+                    h1 {{ text-align: center; font-size: 16pt; margin-bottom: 5px; }}
+                    .summary {{ text-align: center; margin-bottom: 15px; }}
+                    table {{ width: 100%; border-collapse: collapse; font-size: 9pt; }}
+                    th, td {{ border: 1px solid #333; padding: 4px; }}
+                    th {{ background-color: #0f172a; color: white; }}
+                    .total-row {{ font-weight: bold; background-color: #f3f4f6; }}
+                </style>
+            </head>
+            <body>
+                <h1>گزارش موجودی کل انبار</h1>
+                <div class="summary">
+                    <p>تاریخ گزارش: {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
+                    <p>تعداد کل اقلام: {total_items}</p>
+                    <p style="font-size: 12pt; font-weight: bold;">ارزش کل انبار: {total_value} ریال</p>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>نام کالا</th>
+                            <th>بارکد</th>
+                            <th>دسته‌بندی</th>
+                            <th>واحد</th>
+                            <th>موجودی</th>
+                            <th>میانگین قیمت خرید</th>
+                            <th>ارزش کل</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows_html}
+                        <tr class="total-row">
+                            <td colspan="6" style="text-align:left;">جمع کل</td>
+                            <td style="text-align:right;">{total_value}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </body>
+            </html>
+            """
+
+            document = QTextDocument()
+            document.setHtml(html)
+
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(filename)
+
+            document.print(printer)
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator.get(
+                    "inventory.inventory_report.info.exported",
+                    "Report saved successfully.",
+                ),
+            )
+
+        except Exception as exc:
+            logger.exception("Error exporting inventory PDF: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
+
+    def _export_excel(self) -> None:
+        """Export inventory report to CSV (Excel-compatible)."""
+        try:
+            from datetime import datetime
+            import csv
+
+            if not self._summary_data or not self._summary_data.get("items"):
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
+                    self._translator.get(
+                        "reports.export.no_data",
+                        "No data to export.",
+                    ),
+                )
+                return
+
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                self._translator.get(
+                    "inventory.inventory_report.button.export_excel",
+                    "Save Inventory Report",
+                ),
+                f"inventory_report_{datetime.now().strftime('%Y%m%d')}.csv",
+                "CSV Files (*.csv)",
+            )
+
+            if not filename:
+                return
+
+            with open(filename, "w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.writer(f)
+
+                # Headers
+                writer.writerow(
+                    [
+                        "نام کالا",
+                        "بارکد",
+                        "دسته‌بندی",
+                        "واحد",
+                        "موجودی",
+                        "میانگین قیمت خرید",
+                        "ارزش کل",
+                    ]
+                )
+
+                # Data rows
+                for item in self._summary_data["items"]:
+                    writer.writerow(
+                        [
+                            item.get("name", ""),
+                            item.get("barcode", ""),
+                            item.get("category", ""),
+                            item.get("unit", "Pcs"),
+                            float(item.get("quantity", Decimal("0"))),
+                            float(item.get("avg_buy_price", Decimal("0"))),
+                            float(item.get("total_value", Decimal("0"))),
+                        ]
+                    )
+
+                # Total row
+                writer.writerow([])
+                writer.writerow(
+                    [
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "جمع کل:",
+                        float(self._summary_data.get("total_value", Decimal("0"))),
+                    ]
+                )
+
+            QMessageBox.information(
+                self,
+                self._translator["dialog.info_title"],
+                self._translator.get(
+                    "inventory.inventory_report.info.exported",
+                    "Report saved successfully.",
+                ),
+            )
+
+        except Exception as exc:
+            logger.exception("Error exporting inventory CSV: %s", exc)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
