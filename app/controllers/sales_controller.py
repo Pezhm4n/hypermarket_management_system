@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple
 
 import json
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.config import (
     LOYALTY_EARN_RATE,
@@ -24,6 +24,8 @@ from app.models.models import (
     Payment,
     Product,
     Shift,
+    ReturnItem,
+    Returns,
 )
 
 SessionFactory = Callable[[], Session]
@@ -1047,6 +1049,279 @@ class SalesController:
                     )
         except Exception as e:
             logger.error("Error in apply_loyalty_discount: %s", e, exc_info=True)
+            raise
+
+    # --------------------------------------------------------------------- #
+    # Returns / refunds
+    # --------------------------------------------------------------------- #
+    def find_invoice(self, invoice_id: int) -> Invoice:
+        """
+        Load a single invoice with its customer, items, and existing returns
+        eagerly loaded for use in the Returns UI.
+        """
+        try:
+            with self._get_session() as session:
+                invoice: Optional[Invoice] = (
+                    session.query(Invoice)
+                    .options(
+                        joinedload(Invoice.customer),
+                        joinedload(Invoice.items).joinedload(InvoiceItem.product),
+                        joinedload(Invoice.items).joinedload(InvoiceItem.batch),
+                        joinedload(Invoice.items).joinedload(InvoiceItem.return_items),
+                        joinedload(Invoice.returns).joinedload(Returns.items),
+                    )
+                    .filter(Invoice.InvID == invoice_id)
+                    .first()
+                )
+
+                if invoice is None:
+                    raise ValueError("Invoice not found.")
+
+                return invoice
+        except Exception as e:
+            logger.error("Error in find_invoice for InvoiceID=%s: %s", invoice_id, e, exc_info=True)
+            raise
+
+    def process_return(
+        self,
+        invoice_id: int,
+        return_items: Iterable[Mapping[str, Any]],
+    ) -> Decimal:
+        """
+        Process a product return for an existing invoice.
+
+        Args:
+            invoice_id: ID of the original invoice.
+            return_items: Iterable of mappings:
+                {
+                    "item_id": int,       # InvoiceItem.ItemID
+                    "quantity": Any,      # quantity to return
+                    "reason": str,        # free-text reason (per item)
+                }
+
+        Returns:
+            Total refund amount as Decimal.
+
+        Notes:
+            * Validates that the requested quantity does not exceed the
+              remaining quantity (original - already returned).
+            * Increases InventoryBatch.CurrentQuantity for the item's batch
+              when BatchID is present.
+            * Rolls back customer loyalty points proportionally to the
+              refund amount, clamping the final balance to >= 0.
+        """
+        try:
+            items_list = list(return_items)
+            if not items_list:
+                raise ValueError("No return items specified.")
+
+            with self._get_session() as session:
+                with session.begin():
+                    invoice: Optional[Invoice] = (
+                        session.query(Invoice)
+                        .options(
+                            joinedload(Invoice.items).joinedload(InvoiceItem.return_items),
+                            joinedload(Invoice.customer),
+                        )
+                        .filter(Invoice.InvID == invoice_id)
+                        .with_for_update()
+                        .first()
+                    )
+
+                    if invoice is None:
+                        raise ValueError("Invoice not found.")
+
+                    if invoice.Status == "Void":
+                        raise ValueError("Cannot create return for a void invoice.")
+
+                    items_by_id = {item.ItemID: item for item in invoice.items or []}
+
+                    normalized: list[tuple[InvoiceItem, Decimal, str]] = []
+                    for payload in items_list:
+                        item_id = payload.get("item_id")
+                        if item_id is None:
+                            continue
+
+                        try:
+                            item_id_int = int(item_id)
+                        except Exception:
+                            raise ValueError(f"Invalid item_id in return payload: {item_id!r}")
+
+                        qty_raw = payload.get("quantity", 0)
+                        try:
+                            qty_dec = Decimal(str(qty_raw))
+                        except Exception:
+                            raise ValueError(
+                                f"Invalid quantity for return item {item_id_int}: {qty_raw!r}"
+                            )
+
+                        if qty_dec <= 0:
+                            continue
+
+                        reason = (payload.get("reason") or "").strip()
+
+                        invoice_item = items_by_id.get(item_id_int)
+                        if invoice_item is None:
+                            raise ValueError(
+                                f"Invoice item {item_id_int} does not belong to invoice {invoice_id}."
+                            )
+
+                        original_qty = Decimal(str(invoice_item.Quantity or 0))
+                        already_returned = sum(
+                            Decimal(str(ri.Quantity or 0))
+                            for ri in (invoice_item.return_items or [])
+                        )
+                        remaining_qty = original_qty - already_returned
+
+                        if remaining_qty <= 0:
+                            raise ValueError(
+                                f"Invoice item {item_id_int} has already been fully returned."
+                            )
+
+                        if qty_dec > remaining_qty:
+                            raise ValueError(
+                                f"Requested return quantity {qty_dec} exceeds remaining quantity "
+                                f"{remaining_qty} for item {item_id_int}."
+                            )
+
+                        normalized.append((invoice_item, qty_dec, reason))
+
+                    if not normalized:
+                        raise ValueError("No valid return quantities specified.")
+
+                    # Create Returns header
+                    reasons = [r for _, _, r in normalized if r]
+                    header_reason = "; ".join(reasons)
+                    if len(header_reason) > 255:
+                        header_reason = header_reason[:252] + "..."
+
+                    returns_row = Returns(
+                        OriginalInvID=invoice.InvID,
+                        Reason=header_reason or None,
+                        RefundAmount=Decimal("0"),
+                    )
+                    session.add(returns_row)
+                    session.flush()  # Ensure ReturnID is available
+
+                    refund_total = Decimal("0")
+
+                    for invoice_item, qty_dec, _reason in normalized:
+                        # Compute per-unit refund based on original line total
+                        try:
+                            line_total = Decimal(str(invoice_item.LineTotal or 0))
+                        except Exception:
+                            line_total = Decimal("0")
+
+                        try:
+                            original_qty = Decimal(str(invoice_item.Quantity or 0))
+                        except Exception:
+                            original_qty = Decimal("0")
+
+                        if original_qty <= 0:
+                            unit_refund = Decimal("0")
+                        else:
+                            unit_refund = (line_total / original_qty).quantize(
+                                Decimal("0.0001"),
+                                rounding=ROUND_HALF_UP,
+                            )
+
+                        line_refund = (unit_refund * qty_dec).quantize(
+                            Decimal("0.01"),
+                            rounding=ROUND_HALF_UP,
+                        )
+                        refund_total += line_refund
+
+                        return_item = ReturnItem(
+                            ReturnID=returns_row.ReturnID,
+                            ItemID=invoice_item.ItemID,
+                            ProdID=invoice_item.ProdID,
+                            Quantity=qty_dec,
+                            RefundLineAmount=line_refund,
+                        )
+                        session.add(return_item)
+
+                        # Inventory restock: increase batch quantity when BatchID is present
+                        batch_id = invoice_item.BatchID
+                        if batch_id is not None:
+                            batch = session.get(InventoryBatch, batch_id)
+                            if batch is not None:
+                                try:
+                                    current_qty = Decimal(str(batch.CurrentQuantity or 0))
+                                except Exception:
+                                    current_qty = Decimal("0")
+                                batch.CurrentQuantity = (
+                                    current_qty + qty_dec
+                                ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+                            else:
+                                logger.warning(
+                                    "Batch %s not found for InvoiceItem %s during return.",
+                                    batch_id,
+                                    invoice_item.ItemID,
+                                )
+                        else:
+                            logger.info(
+                                "InvoiceItem %s has no BatchID; skipping inventory restock.",
+                                invoice_item.ItemID,
+                            )
+
+                    returns_row.RefundAmount = refund_total.quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+
+                    # Loyalty rollback (if invoice has a customer and refund is positive)
+                    if (
+                        invoice.CustID is not None
+                        and invoice.customer is not None
+                        and refund_total > 0
+                        and LOYALTY_EARN_THRESHOLD > 0
+                        and LOYALTY_EARN_RATE > 0
+                    ):
+                        try:
+                            current_points = int(invoice.customer.LoyaltyPoints or 0)
+                        except Exception:
+                            current_points = 0
+
+                        if current_points < 0:
+                            current_points = 0
+
+                        threshold = Decimal(str(LOYALTY_EARN_THRESHOLD))
+                        if threshold > 0:
+                            try:
+                                points_to_revert = int(
+                                    (refund_total / threshold) * LOYALTY_EARN_RATE
+                                )
+                            except Exception:
+                                points_to_revert = 0
+
+                            if points_to_revert > 0:
+                                new_balance = current_points - points_to_revert
+                                # Decision: do not allow negative balances for now.
+                                if new_balance < 0:
+                                    new_balance = 0
+
+                                invoice.customer.LoyaltyPoints = new_balance
+
+                                logger.info(
+                                    "Reverted %s loyalty point(s) for customer %s due to refund=%s. New balance=%s",
+                                    points_to_revert,
+                                    invoice.CustID,
+                                    refund_total,
+                                    new_balance,
+                                )
+
+                    logger.info(
+                        "Processed return for InvoiceID=%s with RefundAmount=%s",
+                        invoice_id,
+                        refund_total,
+                    )
+
+                    return refund_total.quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+        except Exception as e:
+            logger.error("Error in process_return for InvoiceID=%s: %s", invoice_id, e, exc_info=True)
             raise
 
     # --------------------------------------------------------------------- #

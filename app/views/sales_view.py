@@ -35,11 +35,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from app.config import LOYALTY_POINT_VALUE
+from app.config import LOYALTY_EARN_RATE, LOYALTY_EARN_THRESHOLD, LOYALTY_POINT_VALUE
 from app.controllers.sales_controller import SalesController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
 from app.views.components.scanner_dialog import ScannerDialog
+from app.views.components.return_dialog import ReturnDialog
 from app.views.customers_view import CustomersDialog
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,9 @@ class SalesView(QWidget):
         self._loyalty_points_balance: int = 0
         self._loyalty_points_to_redeem: int = 0
         self._loyalty_discount_value: Decimal = Decimal("0")
+        self._current_subtotal: Decimal = Decimal("0")
+        self._current_manual_discount: Decimal = Decimal("0")
+        self._current_total_amount: Decimal = Decimal("0")
 
         uic.loadUi("app/views/ui/sales_view.ui", self)
 
@@ -188,6 +192,7 @@ class SalesView(QWidget):
         self._inject_customer_controls()
         self._inject_loyalty_controls()
         self._inject_return_mode_toggle()
+        self._inject_returns_button()
         self._inject_close_shift_button()
         self._inject_clear_cart_button()
         self._inject_discount_control()
@@ -317,6 +322,28 @@ class SalesView(QWidget):
                 self.chkReturnMode.setParent(self)
         except Exception as e:
             logger.error("Error in _inject_return_mode_toggle: %s", e, exc_info=True)
+
+    def _inject_returns_button(self) -> None:
+        """
+        Inject a dedicated 'Returns / Refund' button that opens the ReturnDialog.
+        """
+        try:
+            top_layout = getattr(self, "horizontalLayout_top", None)
+            if top_layout is None:
+                logger.warning(
+                    "SalesView top layout not found; cannot inject Returns button."
+                )
+                return
+
+            self.btnReturns = getattr(self, "btnReturns", None)
+            if self.btnReturns is None:
+                self.btnReturns = QPushButton(self)
+                self.btnReturns.setObjectName("btnReturns")
+                self.btnReturns.setText("Returns / Refund")
+
+            top_layout.addWidget(self.btnReturns)
+        except Exception as e:
+            logger.error("Error in _inject_returns_button: %s", e, exc_info=True)
 
     def _inject_close_shift_button(self) -> None:
         try:
@@ -472,6 +499,13 @@ class SalesView(QWidget):
                 self.chkReturnMode.setText(
                     self._translator.get("sales.mode.return", "Return Mode")
                 )
+            if hasattr(self, "btnReturns"):
+                self.btnReturns.setText(
+                    self._translator.get(
+                        "sales.button.returns",
+                        "Returns / Refund",
+                    )
+                )
             if hasattr(self, "lblDiscount"):
                 self.lblDiscount.setText(
                     self._translator.get("sales.label.discount", "Discount") + ":"
@@ -560,6 +594,8 @@ class SalesView(QWidget):
             self.btnRecallOrder.clicked.connect(self._on_recall_order_clicked)
         if hasattr(self, "chkReturnMode"):
             self.chkReturnMode.toggled.connect(self._on_return_mode_toggled)
+        if hasattr(self, "btnReturns"):
+            self.btnReturns.clicked.connect(self._on_returns_clicked)
         if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
             self.spinDiscount.valueChanged.connect(lambda _: self._recalculate_total())
         if hasattr(self, "spinRedeemPoints") and self.spinRedeemPoints is not None:
@@ -639,6 +675,18 @@ class SalesView(QWidget):
             logger.error("Error in _on_scan_barcode_clicked: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
 
+    def _on_returns_clicked(self) -> None:
+        try:
+            dialog = ReturnDialog(
+                translation_manager=self._translator,
+                controller=self._controller,
+                parent=self,
+            )
+            dialog.exec()
+        except Exception as e:
+            logger.error("Error in _on_returns_clicked: %s", e, exc_info=True)
+            QMessageBox.critical(self, "Error", str(e))
+
     def _on_scanner_barcode_detected(self, code: str) -> None:
         try:
             if not code:
@@ -705,13 +753,12 @@ class SalesView(QWidget):
         except Exception as e:
             logger.error("Error in _on_return_mode_toggled: %s", e, exc_info=True)
 
-    def _on_hold_order_clicked(self) -> None:
+    def _on_redeem_points_changed(self, value: int) -> None:
         try:
-            cart_items = self._collect_cart_items()
-            if not cart_items:
-                QMessageBox.information(
-                    self,
-                    self._translator["dialog.info_title"],
+            _ = value
+            self._recalculate_total()
+        except Exception as e:
+            logger.error("Error in _on_redeem_points_changed: %s", e, excnslator["dialog.info_title"],
                     self._translator["sales.info.cart_empty"],
                 )
                 return
@@ -898,14 +945,19 @@ class SalesView(QWidget):
             QMessageBox.critical(self, "Error", str(e))
 
     def _reset_total(self) -> None:
+        self._current_subtotal = Decimal("0")
+        self._current_manual_discount = Decimal("0")
+        self._loyalty_points_to_redeem = 0
+        self._loyalty_discount_value = Decimal("0")
+        self._current_total_amount = Decimal("0")
+
         total_text = self._translator["sales.total_prefix"].format(
             amount=self._format_money(Decimal("0"))
         )
         self.lblTotalAmount.setText(total_text)
         if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
             self.spinDiscount.blockSignals(True)
-            self.spinDiscount.setValue(0.0)
-            self.spinDiscount.blockSignals(False)
+           
 
     def _find_cart_row_by_prod_id(self, prod_id: int) -> int:
         for row in range(self.tblCart.rowCount()):
@@ -1131,10 +1183,16 @@ class SalesView(QWidget):
     def _recalculate_total(self) -> None:
         cart_items = self._collect_cart_items()
         if not cart_items:
+            self._current_subtotal = Decimal("0")
+            self._current_manual_discount = Decimal("0")
+            self._loyalty_points_to_redeem = 0
+            self._loyalty_discount_value = Decimal("0")
+            self._current_total_amount = Decimal("0")
             self._reset_total()
             return
 
         subtotal = self._controller.calculate_cart_total(cart_items)
+        self._current_subtotal = subtotal
 
         # Handle manual discount logic
         discount_value = Decimal("0")
@@ -1171,6 +1229,8 @@ class SalesView(QWidget):
                 except Exception:
                     pass
             discount_value = Decimal("0")
+
+        self._current_manual_discount = discount_value
 
         # Loyalty discount logic
         loyalty_discount = Decimal("0")
@@ -1250,6 +1310,8 @@ class SalesView(QWidget):
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,
         )
+        self._current_total_amount = total
+
         total_text = self._translator["sales.total_prefix"].format(
             amount=self._format_money(total)
         )
@@ -1463,23 +1525,26 @@ class SalesView(QWidget):
                 )
                 return
 
-            subtotal = self._controller.calculate_cart_total(cart_items)
-            discount_value = Decimal("0")
-            if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
-                try:
-                    discount_value = Decimal(str(self.spinDiscount.value()))
-                except Exception:
-                    discount_value = Decimal("0")
+            # Ensure totals and loyalty calculations are up to date
+            self._recalculate_total()
 
-            total = (subtotal - discount_value).quantize(
+            subtotal = self._current_subtotal
+            manual_discount = self._current_manual_discount
+            loyalty_discount = self._loyalty_discount_value
+            total = self._current_total_amount
+
+            discount_for_invoice = (manual_discount + loyalty_discount).quantize(
                 Decimal("0.01"),
                 rounding=ROUND_HALF_UP,
             )
+
             logger.info(
-                "Calculated checkout total: subtotal=%s, discount=%s, final=%s",
+                "Calculated checkout total: subtotal=%s, manual_discount=%s, loyalty_discount=%s, final=%s, points_to_redeem=%s",
                 subtotal,
-                discount_value,
+                manual_discount,
+                loyalty_discount,
                 total,
+                self._loyalty_points_to_redeem,
             )
 
             shift_id = self._resolve_shift_id()
@@ -1491,7 +1556,8 @@ class SalesView(QWidget):
                 payment_method="Cash",
                 cust_id=self._selected_customer_id,
                 is_refund=self._return_mode,
-                discount_amount=discount_value,
+                discount_amount=discount_for_invoice,
+                loyalty_points_to_use=self._loyalty_points_to_redeem,
             )
 
             if success:
@@ -1500,7 +1566,53 @@ class SalesView(QWidget):
                     shift_id,
                     total,
                 )
-                self._generate_receipt_pdf(cart_items, total)
+
+                # Compute loyalty summary for receipt (view-side, to avoid extra DB round-trip)
+                points_spent = 0
+                points_earned = 0
+                new_balance = None
+
+                if (
+                    not self._return_mode
+                    and self._selected_customer_id is not None
+                    and self._loyalty_points_balance is not None
+                ):
+                    try:
+                        base_balance = max(int(self._loyalty_points_balance or 0), 0)
+                    except Exception:
+                        base_balance = 0
+
+                    points_spent = max(int(self._loyalty_points_to_redeem or 0), 0)
+
+                    net_total = total
+                    if net_total < 0:
+                        net_total = Decimal("0")
+
+                    if net_total > 0 and LOYALTY_EARN_THRESHOLD > 0:
+                        try:
+                            blocks = int(
+                                net_total
+                                // Decimal(str(LOYALTY_EARN_THRESHOLD))
+                            )
+                        except Exception:
+                            blocks = 0
+                        if blocks > 0 and LOYALTY_EARN_RATE > 0:
+                            points_earned = blocks * LOYALTY_EARN_RATE
+
+                    new_balance = base_balance - points_spent + points_earned
+                    if new_balance < 0:
+                        new_balance = 0
+
+                    self._loyalty_points_balance = new_balance
+                    self._update_loyalty_label()
+
+                self._generate_receipt_pdf(
+                    cart_items,
+                    total,
+                    points_spent=points_spent,
+                    points_earned=points_earned,
+                    loyalty_balance_after=new_balance,
+                )
                 QMessageBox.information(
                     self,
                     self._translator["dialog.info_title"],
@@ -1795,6 +1907,10 @@ class SalesView(QWidget):
         subtotal: Optional[Decimal] = None,
         discount: Optional[Decimal] = None,
         is_refund: bool = False,
+        loyalty_discount: Optional[Decimal] = None,
+        points_spent: int = 0,
+        points_earned: int = 0,
+        loyalty_balance_after: Optional[int] = None,
     ) -> str:
         try:
             lines_html = ""
@@ -1845,16 +1961,63 @@ class SalesView(QWidget):
             discount_label = self._translator["sales.receipt.discount_label"]
             total_label = self._translator["sales.receipt.total_label"]
 
+            loyalty_discount_label = self._translator.get(
+                "sales.receipt.loyalty_discount_label",
+                "Loyalty Discount",
+            )
+            loyalty_points_spent_label = self._translator.get(
+                "sales.receipt.loyalty_points_spent_label",
+                "used {points} pts",
+            )
+            loyalty_points_earned_label = self._translator.get(
+                "sales.receipt.loyalty_points_earned_label",
+                "Points Earned",
+            )
+            loyalty_balance_label = self._translator.get(
+                "sales.receipt.loyalty_balance_label",
+                "Current Balance",
+            )
+
             col_name = self._translator["sales.receipt.table.header.name"]
             col_qty = self._translator["sales.receipt.table.header.quantity"]
             col_price = self._translator["sales.receipt.table.header.price"]
             col_total = self._translator["sales.receipt.table.header.total"]
 
+            if loyalty_discount is None:
+                loyalty_discount = Decimal("0")
+
+            show_loyalty_discount = points_spent > 0 and loyalty_discount > 0
+            show_points_earned = points_earned > 0
+            show_balance = loyalty_balance_after is not None
+
+            loyalty_lines_html = ""
+            if show_loyalty_discount:
+                loyalty_lines_html += (
+                    f"&lt;div class=\\"meta\\"&gt;"
+                    f"{loyalty_discount_label}: -{self._format_money(loyalty_discount)} "
+                    f"({loyalty_points_spent_label.format(points=points_spent)})"
+                    f"&lt;/div&gt;"
+                )
+
+            if show_points_earned:
+                loyalty_lines_html += (
+                    f"&lt;div class=\\"meta\\" style=\\"font-weight:bold;\\"&gt;"
+                    f"{loyalty_points_earned_label}: +{points_earned}"
+                    f"&lt;/div&gt;"
+                )
+
+            if show_balance:
+                loyalty_lines_html += (
+                    f"&lt;div class=\\"meta\\"&gt;"
+                    f"{loyalty_balance_label}: {loyalty_balance_after} pts"
+                    f"&lt;/div&gt;"
+                )
+
             html = f"""
-            <html dir="rtl">
-              <head>
-                <meta charset="utf-8" />
-                <style>
+            &lt;html dir="rtl"&gt;
+              &lt;head&gt;
+                &lt;meta charset="utf-8" /&gt;
+                &lt;style&gt;
                   @page {{
                     size: 80mm auto;
                     margin: 4mm;
@@ -1888,40 +2051,41 @@ class SalesView(QWidget):
                   }}
                   .meta {{
                     font-size: 8pt;
-                    margin-top: 4px;
+                    margin-top: 2px;
                   }}
-                </style>
-              </head>
-              <body>
-                <h1>{tx_title}</h1>
-                <div class="meta">{customer_label}: {customer_line}</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{col_name}</th>
-                      <th>{col_qty}</th>
-                      <th>{col_price}</th>
-                      <th>{col_total}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                &lt;/style&gt;
+              &lt;/head&gt;
+              &lt;body&gt;
+                &lt;h1&gt;{tx_title}&lt;/h1&gt;
+                &lt;div class="meta"&gt;{customer_label}: {customer_line}&lt;/div&gt;
+                &lt;table&gt;
+                  &lt;thead&gt;
+                    &lt;tr&gt;
+                      &lt;th&gt;{col_name}&lt;/th&gt;
+                      &lt;th&gt;{col_qty}&lt;/th&gt;
+                      &lt;th&gt;{col_price}&lt;/th&gt;
+                      &lt;th&gt;{col_total}&lt;/th&gt;
+                    &lt;/tr&gt;
+                  &lt;/thead&gt;
+                  &lt;tbody&gt;
                     {lines_html}
-                    <tr>
-                      <td colspan="3" style="text-align:left;">{subtotal_label}</td>
-                      <td style="text-align:right;">{self._format_money(subtotal)}</td>
-                    </tr>
-                    <tr>
-                      <td colspan="3" style="text-align:left;">{discount_label}</td>
-                      <td style="text-align:right;">{self._format_money(discount)}</td>
-                    </tr>
-                    <tr class="total-row">
-                      <td colspan="3" style="text-align:left;">{total_label}</td>
-                      <td style="text-align:right;">{self._format_money(total)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </body>
-            </html>
+                    &lt;tr&gt;
+                      &lt;td colspan="3" style="text-align:left;"&gt;{subtotal_label}&lt;/td&gt;
+                      &lt;td style="text-align:right;"&gt;{self._format_money(subtotal)}&lt;/td&gt;
+                    &lt;/tr&gt;
+                    &lt;tr&gt;
+                      &lt;td colspan="3" style="text-align:left;"&gt;{discount_label}&lt;/td&gt;
+                      &lt;td style="text-align:right;"&gt;{self._format_money(discount)}&lt;/td&gt;
+                    &lt;/tr&gt;
+                    &lt;tr class="total-row"&gt;
+                      &lt;td colspan="3" style="text-align:left;"&gt;{total_label}&lt;/td&gt;
+                      &lt;td style="text-align:right;"&gt;{self._format_money(total)}&lt;/td&gt;
+                    &lt;/tr&gt;
+                  &lt;/tbody&gt;
+                &lt;/table&gt;
+                {loyalty_lines_html}
+              &lt;/body&gt;
+            &lt;/html&gt;
             """
             return html
         except Exception as e:
@@ -1932,6 +2096,9 @@ class SalesView(QWidget):
         self,
         cart_items: List[Dict[str, Any]],
         total: Decimal,
+        points_spent: int = 0,
+        points_earned: int = 0,
+        loyalty_balance_after: Optional[int] = None,
     ) -> None:
         try:
             if not cart_items:
@@ -1965,13 +2132,15 @@ class SalesView(QWidget):
                     }
                 )
 
-            subtotal = self._controller.calculate_cart_total(enriched_items)
-            discount_value = Decimal("0")
-            if hasattr(self, "spinDiscount") and self.spinDiscount is not None:
-                try:
-                    discount_value = Decimal(str(self.spinDiscount.value()))
-                except Exception:
-                    discount_value = Decimal("0")
+            # Use cached subtotal / discounts when available to keep receipt consistent
+            subtotal = self._current_subtotal
+            if subtotal == Decimal("0"):
+                subtotal = self._controller.calculate_cart_total(enriched_items)
+
+            discount_value = (self._current_manual_discount + self._loyalty_discount_value).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
 
             html = self._build_receipt_html(
                 enriched_items,
@@ -1979,6 +2148,10 @@ class SalesView(QWidget):
                 subtotal=subtotal,
                 discount=discount_value,
                 is_refund=self._return_mode,
+                loyalty_discount=self._loyalty_discount_value,
+                points_spent=points_spent,
+                points_earned=points_earned,
+                loyalty_balance_after=loyalty_balance_after,
             )
 
             default_filename = "receipt.pdf"
