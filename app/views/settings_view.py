@@ -5,7 +5,6 @@ from typing import Optional
 import json
 import logging
 import re
-import shutil
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
@@ -31,6 +30,7 @@ from qt_material import apply_stylesheet
 from app.config import CONFIG, ROOT_DIR
 from app.controllers.auth_controller import AuthController
 from app.controllers.user_controller import UserController
+from app.core.database_manager import DatabaseManager
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
 
@@ -58,7 +58,8 @@ class SettingsView(QWidget):
         self._profile_data: Optional[dict] = None
         self._store_config_path: Path = ROOT_DIR / "config.json"
         self._store_config: dict = {}
-        self._db_path: Path = ROOT_DIR / "hypermarket.db"
+        self._database_manager = DatabaseManager()
+        self._db_path: Path = CONFIG.sqlite_db_path
 
         self._build_ui()
         self._connect_signals()
@@ -785,16 +786,16 @@ class SettingsView(QWidget):
     # ------------------------------------------------------------------ #
     def _on_backup_database_clicked(self) -> None:
         try:
-            if not self._db_path.is_file():
-                QMessageBox.warning(
-                    self,
-                    self._translator["dialog.warning_title"],
-                    self._translator.get(
-                        "settings.database.error.db_missing",
-                        "Database file could not be found.",
-                    ),
+            db_type = self._database_manager.get_db_type()
+
+            if db_type == "sqlite":
+                default_name = "hypermarket_backup.db"
+                file_filter = "Database Files (*.db);;All Files (*.*)"
+            else:
+                default_name = "hms_db_backup.backup"
+                file_filter = (
+                    "PostgreSQL Backup Files (*.backup *.dump);;All Files (*.*)"
                 )
-                return
 
             filename, _ = QFileDialog.getSaveFileName(
                 self,
@@ -802,14 +803,33 @@ class SettingsView(QWidget):
                     "settings.database.backup.dialog_title",
                     "Backup database",
                 ),
-                "hypermarket_backup.db",
-                "Database Files (*.db);;All Files (*.*)",
+                default_name,
+                file_filter,
             )
             if not filename:
                 return
 
             try:
-                shutil.copy2(self._db_path, filename)
+                self._database_manager.backup_database(filename)
+            except FileNotFoundError as exc:
+                logger.error(
+                    "File not found during database backup: %s",
+                    exc,
+                    exc_info=True,
+                )
+                if db_type == "sqlite":
+                    message = self._translator.get(
+                        "settings.database.error.db_missing",
+                        "Database file could not be found.",
+                    )
+                else:
+                    message = str(exc)
+                QMessageBox.critical(
+                    self,
+                    self._translator["dialog.error_title"],
+                    message,
+                )
+                return
             except PermissionError as exc:
                 logger.error(
                     "Permission error while creating database backup: %s",
@@ -856,6 +876,15 @@ class SettingsView(QWidget):
 
     def _on_restore_database_clicked(self) -> None:
         try:
+            db_type = self._database_manager.get_db_type()
+
+            if db_type == "sqlite":
+                file_filter = "Database Files (*.db);;All Files (*.*)"
+            else:
+                file_filter = (
+                    "PostgreSQL Backup Files (*.backup *.dump);;All Files (*.*)"
+                )
+
             filename, _ = QFileDialog.getOpenFileName(
                 self,
                 self._translator.get(
@@ -863,7 +892,7 @@ class SettingsView(QWidget):
                     "Restore database",
                 ),
                 "",
-                "Database Files (*.db);;All Files (*.*)",
+                file_filter,
             )
             if not filename:
                 return
@@ -895,8 +924,22 @@ class SettingsView(QWidget):
                 return
 
             try:
-                self._db_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source_path, self._db_path)
+                self._database_manager.restore_database(source_path)
+            except FileNotFoundError as exc:
+                logger.error(
+                    "File not found during database restore: %s",
+                    exc,
+                    exc_info=True,
+                )
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    self._translator.get(
+                        "settings.database.error.restore_missing",
+                        str(exc),
+                    ),
+                )
+                return
             except PermissionError as exc:
                 logger.error(
                     "Permission error while restoring database: %s",
@@ -909,6 +952,20 @@ class SettingsView(QWidget):
                     self._translator.get(
                         "settings.database.error.permission_restore",
                         "Permission denied while restoring the database. Please close any applications using the file and try again.",
+                    ),
+                )
+                return
+            except NotImplementedError as exc:
+                logger.warning(
+                    "Database restore is not implemented for current backend: %s",
+                    exc,
+                )
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
+                    self._translator.get(
+                        "settings.database.restore.not_implemented",
+                        str(exc),
                     ),
                 )
                 return
@@ -925,18 +982,19 @@ class SettingsView(QWidget):
                 )
                 return
 
-            QMessageBox.information(
-                self,
-                self._translator["dialog.info_title"],
-                self._translator.get(
-                    "settings.database.restore.success",
-                    "Database restored successfully. The application will now close.",
-                ),
-            )
+            if db_type == "sqlite":
+                QMessageBox.information(
+                    self,
+                    self._translator["dialog.info_title"],
+                    self._translator.get(
+                        "settings.database.restore.success",
+                        "Restore successful. The application will now close to apply changes.",
+                    ),
+                )
 
-            app = QApplication.instance()
-            if app is not None:
-                app.quit()
+                app = QApplication.instance()
+                if app is not None:
+                    app.quit()
         except Exception as e:
             logger.error(
                 "Error in _on_restore_database_clicked: %s",

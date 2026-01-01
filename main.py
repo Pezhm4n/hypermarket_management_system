@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import CONFIG
 from app.controllers.auth_controller import AuthController
+from app.core.database_manager import DatabaseManager
 from app.core.logging_config import configure_logging
 from app.core.translation_manager import TranslationManager
 from app.database import engine
@@ -27,12 +28,21 @@ def init_database() -> None:
 
     This function will:
       * Create tables that do not exist.
-      * Add missing columns used by the application.
-      * Adjust column types where required (e.g., MinStockLevel to NUMERIC).
+      * For PostgreSQL: add missing columns and adjust column types where required
+        (e.g., MinStockLevel to NUMERIC).
+      * For SQLite: only ensure tables exist (no raw SQL migrations).
     """
     try:
-        # Ensure all tables defined in the ORM exist.
+        # Ensure all tables defined in the ORM exist (works for both backends).
         Base.metadata.create_all(bind=engine)
+
+        db_type = DatabaseManager().get_db_type()
+        if db_type != "postgres":
+            logger.info(
+                "Skipping PostgreSQL-specific migrations for backend '%s'.", db_type
+            )
+            logger.info("Database connection successful; tables created/verified.")
+            return
 
         inspector = inspect(engine)
 

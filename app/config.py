@@ -8,6 +8,24 @@ from pathlib import Path
 BASE_DIR: Path = Path(__file__).resolve().parent
 ROOT_DIR: Path = BASE_DIR.parent
 
+# ---------------------------------------------------------------------------
+# Hybrid database strategy
+# ---------------------------------------------------------------------------
+
+# Toggle this flag to switch between PostgreSQL (False) and SQLite (True).
+# For classroom/demo environments PostgreSQL is recommended; for the final
+# packaged .exe release SQLite is typically more convenient.
+USE_SQLITE: bool = False
+
+# Centralized SQLite configuration so the path is shared across the app.
+SQLITE_DB_FILENAME: str = "hypermarket.db"
+SQLITE_DB_PATH: Path = ROOT_DIR / SQLITE_DB_FILENAME
+
+# Default PostgreSQL URL (kept for backward compatibility).
+POSTGRES_URL: str = (
+    "postgresql+psycopg2://postgres:123456@localhost:5432/hms_db"
+)
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -26,8 +44,15 @@ class AppConfig:
     styles_path: Path = BASE_DIR / "styles" / "main.qss"
 
     # Database
-    # NOTE: Per requirements, this is hard-coded and does not respect env vars.
-    database_url: str = "postgresql+psycopg2://postgres:123456@localhost:5432/hms_db"
+    # NOTE: Per requirements, the URL is derived from static configuration and
+    # does not respect environment variables.
+    use_sqlite: bool = USE_SQLITE
+    sqlite_db_path: Path = SQLITE_DB_PATH
+    database_url: str = (
+        f"sqlite:///{SQLITE_DB_PATH}"
+        if USE_SQLITE
+        else POSTGRES_URL
+    )
 
     # Logging
     log_directory: Path = ROOT_DIR / "logs"
