@@ -282,3 +282,41 @@ QGroupBox::title {
     subcontrol-position: top left;
     padding: 0 4px;
 }
+
+/* Dashboard KPI cards */
+QFrame#KpiCard,
+QFrame#KpiCardProfit,
+QFrame#KpiCardLowStock {
+    background-color: #020617;
+    border-radius: 10px;
+    border: 1px solid #1f2937;
+}
+
+QFrame#KpiCardProfit {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:1,
+        stop:0 #064e3b,
+        stop:1 #16a34a
+    );
+}
+
+QFrame#KpiCardLowStock {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:1,
+        stop:0 #7f1d1d,
+        stop:1 #f97316
+    );
+}
+
+QLabel#KpiTitle {
+    font-size: 10pt;
+    color: #9ca3af;
+}
+
+QLabel#KpiValueSales,
+QLabel#KpiValueOrders,
+QLabel#KpiValueProfit,
+QLabel#KpiValueLowStock {
+    font-size: 20pt;
+    font-weight: 600;
+}

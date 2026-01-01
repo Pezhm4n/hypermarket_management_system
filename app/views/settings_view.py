@@ -7,7 +7,7 @@ import logging
 import re
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -60,6 +60,13 @@ class SettingsView(QWidget):
         self._store_config: dict = {}
         self._database_manager = DatabaseManager()
         self._db_path: Path = CONFIG.sqlite_db_path
+
+        # Capture base font size once so we can reset before theme changes
+        app = QApplication.instance()
+        if app is not None:
+            self._base_font_point_size = app.font().pointSize() or 12
+        else:
+            self._base_font_point_size = 12
 
         self._build_ui()
         self._connect_signals()
@@ -236,6 +243,36 @@ class SettingsView(QWidget):
 
         layout.addWidget(self.grpAppearance)
 
+        # Install wheel filters to avoid accidental changes
+        self.cmbTheme.installEventFilter(self)
+        self.cmbFontScale.installEventFilter(self)
+
+        # -----------------------------
+        # Language card
+        # -----------------------------
+        self.grpLanguage = QGroupBox(container)
+        self.grpLanguage.setObjectName("settingsLanguageGroupBox")
+        language_outer_layout = QVBoxLayout(self.grpLanguage)
+        language_outer_layout.setContentsMargins(16, 16, 16, 16)
+        language_outer_layout.setSpacing(12)
+
+        language_row_layout = QHBoxLayout()
+        language_row_layout.setSpacing(24)
+
+        self.lblLanguageLabel = QLabel(self.grpLanguage)
+        self.cmbLanguage = QComboBox(self.grpLanguage)
+
+        language_row_layout.addWidget(self.lblLanguageLabel)
+        language_row_layout.addWidget(self.cmbLanguage)
+        language_row_layout.addStretch()
+
+        language_outer_layout.addLayout(language_row_layout)
+
+        layout.addWidget(self.grpLanguage)
+
+        # Install wheel filter for language selector as well
+        self.cmbLanguage.installEventFilter(self)
+
         # -----------------------------
         # Store information card
         # -----------------------------
@@ -330,6 +367,10 @@ class SettingsView(QWidget):
         self.btnRestoreDatabase.clicked.connect(self._on_restore_database_clicked)
         self.cmbTheme.currentIndexChanged.connect(self._on_theme_changed)
         self.cmbFontScale.currentIndexChanged.connect(self._on_font_scale_changed)
+        if hasattr(self, "cmbLanguage"):
+            self.cmbLanguage.currentIndexChanged.connect(
+                self._on_language_selection_changed
+            )
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -423,6 +464,42 @@ class SettingsView(QWidget):
             self.lblFontScaleLabel.setText(
                 self._translator["settings.font_scale.label"]
             )
+
+            # Language section
+            if hasattr(self, "grpLanguage"):
+                self.grpLanguage.setTitle(
+                    self._translator.get("settings.language.title", "Language")
+                )
+            if hasattr(self, "lblLanguageLabel"):
+                self.lblLanguageLabel.setText(
+                    self._translator.get("settings.language.label", "Application language")
+                )
+
+            # Language options
+            if hasattr(self, "cmbLanguage"):
+                current_lang = getattr(self._translator, "language", "fa")
+                self.cmbLanguage.blockSignals(True)
+                self.cmbLanguage.clear()
+                # Display order: Persian, English
+                self.cmbLanguage.addItem(
+                    self._translator.get(
+                        "settings.language.option.fa",
+                        "Persian",
+                    ),
+                    "fa",
+                )
+                self.cmbLanguage.addItem(
+                    self._translator.get(
+                        "settings.language.option.en",
+                        "English",
+                    ),
+                    "en",
+                )
+                # Select current language
+                index = self.cmbLanguage.findData(current_lang)
+                if index != -1:
+                    self.cmbLanguage.setCurrentIndex(index)
+                self.cmbLanguage.blockSignals(False)
 
             # Theme options
             current_theme = self.cmbTheme.currentIndex()
@@ -556,6 +633,13 @@ class SettingsView(QWidget):
                 )
                 return
 
+            # Reset font back to base size before applying a new theme so
+            # scaling does not compound across theme switches.
+            base_size = getattr(self, "_base_font_point_size", 12)
+            base_font = app.font() if app.font() is not None else QFont()
+            base_font.setPointSize(base_size)
+            app.setFont(base_font)
+
             theme_data = self.cmbTheme.itemData(index)
             logger.info("Theme data for index %s: %s", index, theme_data)
 
@@ -608,6 +692,40 @@ class SettingsView(QWidget):
         except Exception as e:
             logger.error("Error in _on_font_scale_changed: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    def eventFilter(self, obj, event):  # type: ignore[override]
+        try:
+            if (
+                event.type() == QEvent.Type.Wheel
+                and isinstance(obj, QComboBox)
+                and obj not in (None,)
+            ):
+                # Allow wheel changes only when the combo has focus or its popup is open.
+                view_visible = False
+                try:
+                    view = obj.view()
+                    view_visible = bool(view and view.isVisible())
+                except Exception:
+                    view_visible = False
+
+                if not obj.hasFocus() and not view_visible:
+                    return True
+        except Exception as e:
+            logger.error("Error in SettingsView.eventFilter: %s", e, exc_info=True)
+        return super().eventFilter(obj, event)
+
+    def _on_language_selection_changed(self, index: int) -> None:
+        try:
+            if not hasattr(self, "cmbLanguage"):
+                return
+            lang_code = self.cmbLanguage.itemData(index)
+            if not lang_code:
+                return
+            if lang_code == getattr(self._translator, "language", None):
+                return
+            self._translator.set_language(str(lang_code))
+        except Exception as e:
+            logger.error("Error in _on_language_selection_changed: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------ #
     # Store settings

@@ -1,4 +1,5 @@
 
+
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
@@ -55,9 +56,9 @@ class StartShiftDialog(QDialog):
     """
 
     def __init__(
-            self,
-            translation_manager: TranslationManager,
-            parent: Optional[QWidget] = None,
+        self,
+        translation_manager: TranslationManager,
+        parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self._translator = translation_manager
@@ -107,7 +108,7 @@ class StartShiftDialog(QDialog):
                 QDialogButtonBox.StandardButton.Ok
                 | QDialogButtonBox.StandardButton.Cancel,
                 parent=self,
-                )
+            )
             layout.addWidget(button_box)
 
             button_box.accepted.connect(self._on_accept)
@@ -170,9 +171,9 @@ class SalesView(QWidget):
     shift_closed = pyqtSignal(dict)
 
     def __init__(
-            self,
-            translation_manager: TranslationManager,
-            parent: Optional[QWidget] = None,
+        self,
+        translation_manager: TranslationManager,
+        parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
 
@@ -916,7 +917,7 @@ class SalesView(QWidget):
                 QDialogButtonBox.StandardButton.Ok
                 | QDialogButtonBox.StandardButton.Cancel,
                 parent=dialog,
-                )
+            )
             layout.addWidget(buttons)
 
             def _on_accept() -> None:
@@ -988,7 +989,7 @@ class SalesView(QWidget):
                 )
             finally:
                 self.spinRedeemPoints.blockSignals(False)
-
+           
 
     def _find_cart_row_by_prod_id(self, prod_id: int) -> int:
         for row in range(self.tblCart.rowCount()):
@@ -1228,10 +1229,10 @@ class SalesView(QWidget):
         # Handle manual discount logic
         discount_value = Decimal("0")
         if (
-                not self._return_mode
-                and hasattr(self, "spinDiscount")
-                and self.spinDiscount is not None
-                and self.spinDiscount.isEnabled()
+            not self._return_mode
+            and hasattr(self, "spinDiscount")
+            and self.spinDiscount is not None
+            and self.spinDiscount.isEnabled()
         ):
             try:
                 discount_value = Decimal(str(self.spinDiscount.value()))
@@ -1268,11 +1269,11 @@ class SalesView(QWidget):
         points_to_use = 0
 
         if (
-                not self._return_mode
-                and self._selected_customer_id is not None
-                and hasattr(self, "spinRedeemPoints")
-                and self.spinRedeemPoints is not None
-                and self.spinRedeemPoints.isEnabled()
+            not self._return_mode
+            and self._selected_customer_id is not None
+            and hasattr(self, "spinRedeemPoints")
+            and self.spinRedeemPoints is not None
+            and self.spinRedeemPoints.isEnabled()
         ):
             try:
                 requested_points = int(self.spinRedeemPoints.value())
@@ -1305,7 +1306,7 @@ class SalesView(QWidget):
                 if points_to_use > 0:
                     try:
                         loyalty_discount = (
-                                Decimal(points_to_use) * Decimal(str(LOYALTY_POINT_VALUE))
+                            Decimal(points_to_use) * Decimal(str(LOYALTY_POINT_VALUE))
                         )
                     except Exception:
                         loyalty_discount = Decimal("0")
@@ -1370,7 +1371,7 @@ class SalesView(QWidget):
                     QDialogButtonBox.StandardButton.Ok
                     | QDialogButtonBox.StandardButton.Cancel,
                     parent=dialog,
-                    )
+                )
                 layout.addWidget(button_box)
 
                 button_box.accepted.connect(dialog.accept)
@@ -1604,9 +1605,9 @@ class SalesView(QWidget):
                 new_balance = None
 
                 if (
-                        not self._return_mode
-                        and self._selected_customer_id is not None
-                        and self._loyalty_points_balance is not None
+                    not self._return_mode
+                    and self._selected_customer_id is not None
+                    and self._loyalty_points_balance is not None
                 ):
                     try:
                         base_balance = max(int(self._loyalty_points_balance or 0), 0)
@@ -1955,16 +1956,16 @@ class SalesView(QWidget):
             )
 
     def _build_receipt_html(
-            self,
-            cart_items: List[Dict[str, Any]],
-            total: Decimal,
-            subtotal: Optional[Decimal] = None,
-            discount: Optional[Decimal] = None,
-            is_refund: bool = False,
-            loyalty_discount: Optional[Decimal] = None,
-            points_spent: int = 0,
-            points_earned: int = 0,
-            loyalty_balance_after: Optional[int] = None,
+        self,
+        cart_items: List[Dict[str, Any]],
+        total: Decimal,
+        subtotal: Optional[Decimal] = None,
+        discount: Optional[Decimal] = None,
+        is_refund: bool = False,
+        loyalty_discount: Optional[Decimal] = None,
+        points_spent: int = 0,
+        points_earned: int = 0,
+        loyalty_balance_after: Optional[int] = None,
     ) -> str:
         """
         Build HTML for the sales/return receipt.
@@ -2151,12 +2152,12 @@ class SalesView(QWidget):
             return "<html><body><pre>Receipt error</pre></body></html>"
 
     def _generate_receipt_pdf(
-            self,
-            cart_items: List[Dict[str, Any]],
-            total: Decimal,
-            points_spent: int = 0,
-            points_earned: int = 0,
-            loyalty_balance_after: Optional[int] = None,
+        self,
+        cart_items: List[Dict[str, Any]],
+        total: Decimal,
+        points_spent: int = 0,
+        points_earned: int = 0,
+        loyalty_balance_after: Optional[int] = None,
     ) -> None:
         try:
             if not cart_items:

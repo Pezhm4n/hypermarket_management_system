@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -46,9 +47,16 @@ class MatplotlibWidget(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         try:
-            self._figure = Figure(figsize=(5, 3))
+            # Match the application's dark theme background
+            self._figure = Figure(figsize=(5, 3), facecolor="#020617")
             self._canvas = FigureCanvas(self._figure)
             self._axes = self._figure.add_subplot(111)
+            self._axes.set_facecolor("#020617")
+
+            # Subtle axis styling to avoid a \"boxed\" white chart look
+            for spine in self._axes.spines.values():
+                spine.set_color("#4b5563")
+            self._axes.tick_params(colors="#e5e7eb")
 
             layout = QVBoxLayout(self)
             layout.setContentsMargins(0, 0, 0, 0)
@@ -239,27 +247,11 @@ class MainView(QMainWindow):
         header_layout.addLayout(header_text_layout)
         header_layout.addStretch()
 
-        # Right side of header: welcome label + language toggles + logout
+        # Right side of header: welcome label + logout
         self.lblCurrentUser = QLabel(self.header_bar)
         self.lblCurrentUser.setObjectName("HeaderUserLabel")
         header_layout.addWidget(self.lblCurrentUser)
 
-        # Language buttons
-        self.btnLanguageEn = QPushButton(self.header_bar)
-        self.btnLanguageEn.setProperty("role", "language")
-
-        self.btnLanguageFa = QPushButton(self.header_bar)
-        self.btnLanguageFa.setProperty("role", "language")
-
-        self._lang_group = QButtonGroup(self)
-        self._lang_group.setExclusive(True)
-        self._lang_group.addButton(self.btnLanguageEn)
-        self._lang_group.addButton(self.btnLanguageFa)
-
-        header_layout.addWidget(self.btnLanguageEn)
-        header_layout.addWidget(self.btnLanguageFa)
-
-        # Logout button
         self.btnLogout = QPushButton(self.header_bar)
         self.btnLogout.setProperty("role", "logout")
         header_layout.addWidget(self.btnLogout)
@@ -283,18 +275,21 @@ class MainView(QMainWindow):
         dashboard_layout.setContentsMargins(0, 0, 0, 0)
         dashboard_layout.setSpacing(16)
 
-        # KPI row
-        kpi_layout = QHBoxLayout()
+        # KPI grid
+        kpi_layout = QGridLayout()
+        kpi_layout.setContentsMargins(0, 0, 0, 0)
         kpi_layout.setSpacing(16)
 
         # Today's sales card
         self._kpi_sales_frame = QFrame(dashboard_page)
+        self._kpi_sales_frame.setObjectName("KpiCard")
         self._kpi_sales_frame.setFrameShape(QFrame.Shape.StyledPanel)
         sales_layout = QVBoxLayout(self._kpi_sales_frame)
         sales_layout.setContentsMargins(16, 12, 16, 12)
         sales_layout.setSpacing(4)
 
         self._kpi_sales_title = QLabel(self._kpi_sales_frame)
+        self._kpi_sales_title.setObjectName("KpiTitle")
         self._kpi_sales_value = QLabel(self._kpi_sales_frame)
         self._kpi_sales_value.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -306,12 +301,14 @@ class MainView(QMainWindow):
 
         # Orders card
         self._kpi_orders_frame = QFrame(dashboard_page)
+        self._kpi_orders_frame.setObjectName("KpiCard")
         self._kpi_orders_frame.setFrameShape(QFrame.Shape.StyledPanel)
         orders_layout = QVBoxLayout(self._kpi_orders_frame)
         orders_layout.setContentsMargins(16, 12, 16, 12)
         orders_layout.setSpacing(4)
 
         self._kpi_orders_title = QLabel(self._kpi_orders_frame)
+        self._kpi_orders_title.setObjectName("KpiTitle")
         self._kpi_orders_value = QLabel(self._kpi_orders_frame)
         self._kpi_orders_value.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -323,44 +320,41 @@ class MainView(QMainWindow):
 
         # Profit card
         self._kpi_profit_frame = QFrame(dashboard_page)
+        self._kpi_profit_frame.setObjectName("KpiCardProfit")
         self._kpi_profit_frame.setFrameShape(QFrame.Shape.StyledPanel)
         profit_layout = QVBoxLayout(self._kpi_profit_frame)
         profit_layout.setContentsMargins(16, 12, 16, 12)
         profit_layout.setSpacing(4)
 
         self._kpi_profit_title = QLabel(self._kpi_profit_frame)
+        self._kpi_profit_title.setObjectName("KpiTitle")
         self._kpi_profit_value = QLabel(self._kpi_profit_frame)
         self._kpi_profit_value.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self._kpi_profit_value.setObjectName("KpiValueProfit")
 
-        # Subtle green accent for profit card
-        self._kpi_profit_frame.setStyleSheet(
-            "QFrame { background-color: #064e3b; border-radius: 8px; }"
-        )
-
         profit_layout.addWidget(self._kpi_profit_title)
         profit_layout.addWidget(self._kpi_profit_value)
 
         # Low stock card
         self._kpi_low_stock_frame = QFrame(dashboard_page)
+        self._kpi_low_stock_frame.setObjectName("KpiCardLowStock")
         self._kpi_low_stock_frame.setFrameShape(QFrame.Shape.StyledPanel)
         low_stock_layout = QVBoxLayout(self._kpi_low_stock_frame)
         low_stock_layout.setContentsMargins(16, 12, 16, 12)
         low_stock_layout.setSpacing(4)
 
         self._kpi_low_stock_title = QLabel(self._kpi_low_stock_frame)
+        self._kpi_low_stock_title.setObjectName("KpiTitle")
         self._kpi_low_stock_value = QLabel(self._kpi_low_stock_frame)
         self._kpi_low_stock_value.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self._kpi_low_stock_value.setObjectName("KpiValueLowStock")
 
-        # Warm red/orange accent for low stock card
-        self._kpi_low_stock_frame.setStyleSheet(
-            "QFrame { background-color: #7f1d1d; border-radius: 8px; }"
-        )
+        low_stock_layout.addWidget(self._kpi_low_stock_title)
+        low_stock_layout.addWidget(self._kpi_low_stock_value)
 
         # Make the low stock card clickable (handled in _on_low_stock_card_clicked)
         self._kpi_low_stock_frame.setCursor(Qt.CursorShape.ArrowCursor)
@@ -368,17 +362,19 @@ class MainView(QMainWindow):
             self._on_low_stock_card_clicked
         )
 
-        kpi_layout.addWidget(self._kpi_sales_frame)
-        kpi_layout.addWidget(self._kpi_orders_frame)
-        kpi_layout.addWidget(self._kpi_profit_frame)
-        kpi_layout.addWidget(self._kpi_low_stock_frame)
-        kpi_layout.addStretch()
+        # Arrange KPI cards in a 2x2 grid
+        kpi_layout.addWidget(self._kpi_sales_frame, 0, 0)
+        kpi_layout.addWidget(self._kpi_orders_frame, 0, 1)
+        kpi_layout.addWidget(self._kpi_profit_frame, 1, 0)
+        kpi_layout.addWidget(self._kpi_low_stock_frame, 1, 1)
+        kpi_layout.setColumnStretch(0, 1)
+        kpi_layout.setColumnStretch(1, 1)
 
         dashboard_layout.addLayout(kpi_layout)
 
         # Sales chart
         self._sales_chart_widget = MatplotlibWidget(dashboard_page)
-        dashboard_layout.addWidget(self._sales_chart_widget)
+        dashboard_layout.addWidget(self._sales_chart_widget, stretch=1)
 
         self._dashboard_page = dashboard_page
 
@@ -429,14 +425,6 @@ class MainView(QMainWindow):
         for key, btn in self._nav_buttons:
             btn.clicked.connect(lambda checked, k=key: self._switch_page(k))
 
-        # Language switching
-        self.btnLanguageEn.clicked.connect(
-            lambda: self._translator.set_language("en")
-        )
-        self.btnLanguageFa.clicked.connect(
-            lambda: self._translator.set_language("fa")
-        )
-
         # Logout
         self.btnLogout.clicked.connect(self._on_logout_clicked)
 
@@ -474,8 +462,6 @@ class MainView(QMainWindow):
         for key, btn in self._nav_buttons:
             btn.setText(self._translator[text_keys[key]])
 
-        self.btnLanguageEn.setText(self._translator["sidebar.language.en"])
-        self.btnLanguageFa.setText(self._translator["sidebar.language.fa"])
         self.btnLogout.setText(self._translator["sidebar.logout"])
 
         # Header
@@ -497,14 +483,17 @@ class MainView(QMainWindow):
             self._kpi_orders_title.setText(
                 self._translator["dashboard.kpi.open_orders"]
             )
-
-        # Ensure language toggle reflects active language
-        if self._translator.language == "fa":
-            self.btnLanguageFa.setChecked(True)
-            self.btnLanguageEn.setChecked(False)
-        else:
-            self.btnLanguageEn.setChecked(True)
-            self.btnLanguageFa.setChecked(False)
+        if hasattr(self, "_kpi_profit_title"):
+            self._kpi_profit_title.setText(
+                self._translator.get("dashboard.kpi.today_profit", "Today's Profit")
+            )
+        if hasattr(self, "_kpi_low_stock_title"):
+            self._kpi_low_stock_title.setText(
+                self._translator.get(
+                    "dashboard.kpi.low_stock",
+                    "Low stock items",
+                )
+            )
 
         # Update header title for current page
         current_key = self._current_page_key
