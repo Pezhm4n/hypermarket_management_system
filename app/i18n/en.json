@@ -286,5 +286,21 @@
   "reports.chart.y_axis": "Sales",
   "reports.export.no_data": "There is no data to export.",
   "reports.export.save_dialog_title": "Save report as CSV",
-  "reports.export.success": "Report exported successfully."
+  "reports.export.success": "Report exported successfully.",
+
+  "suppliers.button.add": "Add Supplier",
+  "suppliers.search_placeholder": "Search suppliers...",
+  "suppliers.table.column.name": "Company Name",
+  "suppliers.table.column.contact": "Contact Person",
+  "suppliers.table.column.phone": "Phone",
+  "suppliers.table.column.actions": "Actions",
+  "suppliers.field.company_name": "Company Name:",
+  "suppliers.field.contact": "Contact Person:",
+  "suppliers.field.phone": "Phone:",
+  "suppliers.field.email": "Email:",
+  "suppliers.field.city": "City:",
+  "suppliers.field.street": "Address:",
+
+  "inventory.restock.field.supplier": "Supplier",
+  "sidebar.suppliers": "Suppliers"
 }

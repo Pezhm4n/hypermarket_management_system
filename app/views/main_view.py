@@ -33,6 +33,7 @@ from app.views.reports_view import ReportsView
 from app.views.sales_view import SalesView
 from app.views.settings_view import SettingsView
 from app.views.users_view import UsersView
+from app.views.suppliers_view import SuppliersView
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,7 @@ class MainView(QMainWindow):
         self.btnDashboard = QPushButton(self.sidebar)
         self.btnSales = QPushButton(self.sidebar)
         self.btnInventory = QPushButton(self.sidebar)
+        self.btnSuppliers = QPushButton(self.sidebar)
         self.btnReports = QPushButton(self.sidebar)
         self.btnUsers = QPushButton(self.sidebar)
         self.btnSettings = QPushButton(self.sidebar)
@@ -187,6 +189,7 @@ class MainView(QMainWindow):
             ("dashboard", self.btnDashboard),
             ("sales", self.btnSales),
             ("inventory", self.btnInventory),
+            ("suppliers", self.btnSuppliers),
             ("reports", self.btnReports),
             ("users", self.btnUsers),
             ("settings", self.btnSettings),
@@ -329,12 +332,13 @@ class MainView(QMainWindow):
 
         self._dashboard_page = dashboard_page
 
-        # Sales / Inventory / Reports / Settings modules
+        # Sales / Inventory / Suppliers/ Reports / Settings modules
         self.sales_view = SalesView(self._translator, parent=self.stacked_widget)
         self.inventory_view = InventoryView(
             self._translator,
             parent=self.stacked_widget,
         )
+        self.suppliers_view = SuppliersView(self._translator, parent=self.stacked_widget)
         self.reports_view = ReportsView(
             translation_manager=self._translator,
             parent=self.stacked_widget,
@@ -344,6 +348,7 @@ class MainView(QMainWindow):
             translation_manager=self._translator,
             parent=self.stacked_widget,
         )
+
 
         # Users module view
         self.users_view = UsersView(
@@ -364,6 +369,7 @@ class MainView(QMainWindow):
         self._page_indices["settings"] = self.stacked_widget.addWidget(
             self.settings_view
         )
+        self._page_indices["suppliers"] = self.stacked_widget.addWidget(self.suppliers_view)
 
         # Default page
         self._switch_page("sales")
@@ -410,6 +416,7 @@ class MainView(QMainWindow):
             "dashboard": "sidebar.dashboard",
             "sales": "sidebar.sales",
             "inventory": "sidebar.inventory",
+            "suppliers": "sidebar.suppliers",
             "reports": "sidebar.reports",
             "users": "sidebar.users",
             "settings": "sidebar.settings",

@@ -43,6 +43,7 @@ from app.core.barcode_manager import BarcodeGenerator
 from app.core.irancode_scraper import IranCodeScraper
 from app.core.translation_manager import TranslationManager
 from app.views.components.scanner_dialog import ScannerDialog
+from app.controllers.supplier_controller import SupplierController
 
 
 class ProductLookupWorker(QThread):
@@ -556,6 +557,9 @@ class InventoryView(QWidget):
         # Context menu reacts to _read_only; no further action needed here.
 
     def _open_restock_dialog(self, prod_id: int, name: str) -> None:
+        """
+        Open dialog to add stock for a product, now including supplier selection.
+        """
         try:
             dialog = RestockDialog(
                 translator=self._translator,
@@ -565,12 +569,14 @@ class InventoryView(QWidget):
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
 
-            qty, buy_price, expiry_date = dialog.get_values()
+            qty, buy_price, expiry_date, sup_id = dialog.get_values()
+
             self._controller.add_stock(
                 prod_id=prod_id,
                 initial_qty=qty,
                 buy_price=buy_price,
                 expiry_date=expiry_date,
+                sup_id=sup_id,
             )
             self._load_products()
         except Exception as exc:
@@ -735,8 +741,8 @@ class InventoryView(QWidget):
 class RestockDialog(QDialog):
     """
     Dialog for adding stock (creating a new inventory batch) for a product.
+    Includes supplier selection.
     """
-
     def __init__(
         self,
         translator: TranslationManager,
@@ -746,15 +752,22 @@ class RestockDialog(QDialog):
         super().__init__(parent)
         self._translator = translator
         self._product_label = product_label
+        
+        # ✅ لود کردن کنترلر تأمین‌کنندگان
+        from app.controllers.supplier_controller import SupplierController
+        self._sup_controller = SupplierController()
+        
         self._quantity = Decimal("0")
         self._buy_price = Decimal("0")
         self._expiry_date: Optional[date] = None
+        self._selected_sup_id: Optional[int] = None # ذخیره آی‌دی تأمین‌کننده
+        
         self._build_ui()
+        self._load_suppliers() # پر کردن لیست تأمین‌کنندگان
 
     def _build_ui(self) -> None:
         self.setModal(True)
-        self.setMinimumWidth(320)
-
+        self.setMinimumWidth(350)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
@@ -785,74 +798,76 @@ class RestockDialog(QDialog):
 
         self.dateExpiry = QDateEdit(self)
         self.dateExpiry.setCalendarPopup(True)
-        today_qdate = QDate.currentDate()
-        self.dateExpiry.setDate(today_qdate)
+        self.dateExpiry.setDate(QDate.currentDate())
+
+        # ✅ اضافه کردن ComboBox تأمین‌کننده
+        self.cmbSupplier = QComboBox(self)
 
         form.addRow(
-            self._translator.get(
-                "inventory.restock.field.quantity", "Quantity / Amount"
-            ),
+            self._translator.get("inventory.restock.field.quantity", "Quantity"),
             self.spinQuantity,
         )
         form.addRow(
-            self._translator.get(
-                "inventory.restock.field.buy_price", "Purchase Price"
-            ),
+            self._translator.get("inventory.restock.field.buy_price", "Purchase Price"),
             self.spinBuyPrice,
         )
         form.addRow(
-            self._translator.get(
-                "inventory.restock.field.expiry_date", "Expiry Date"
-            ),
+            self._translator.get("inventory.restock.field.expiry_date", "Expiry Date"),
             self.dateExpiry,
+        )
+        # ✅ اضافه شدن ردیف تأمین‌کننده به فرم
+        form.addRow(
+            self._translator.get("inventory.restock.field.supplier", "Supplier"),
+            self.cmbSupplier,
         )
 
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel,
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             parent=self,
         )
         layout.addWidget(buttons)
-
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
+
+    def _load_suppliers(self) -> None:
+        """بارگذاری لیست تأمین‌کنندگان از دیتابیس در ComboBox"""
+        try:
+            suppliers = self._sup_controller.list_suppliers()
+            self.cmbSupplier.clear()
+            # گزینه پیش‌فرض (بدون تأمین‌کننده)
+            self.cmbSupplier.addItem("---", None) 
+            for s in suppliers:
+                self.cmbSupplier.addItem(s["company_name"], s["sup_id"])
+        except Exception as exc:
+            logger.error("Error loading suppliers in RestockDialog: %s", exc)
 
     def _on_accept(self) -> None:
         try:
             qty_val = self.spinQuantity.value()
-            buy_price_val = self.spinBuyPrice.value()
             if qty_val <= 0:
-                QMessageBox.warning(
-                    self,
-                    self._translator["dialog.warning_title"],
-                    self._translator.get(
-                        "inventory.dialog.error.invalid_quantity",
-                        "Quantity must be greater than zero.",
-                    ),
-                )
+                QMessageBox.warning(self, self._translator["dialog.warning_title"], 
+                                    self._translator.get("inventory.dialog.error.invalid_quantity", "Invalid Qty"))
                 return
+
             self._quantity = Decimal(str(qty_val))
-            self._buy_price = Decimal(str(buy_price_val))
+            self._buy_price = Decimal(str(self.spinBuyPrice.value()))
+            
+            # ✅ دریافت آی‌دی تأمین‌کننده انتخاب شده
+            self._selected_sup_id = self.cmbSupplier.currentData() 
+
             qdate = self.dateExpiry.date()
-            try:
-                self._expiry_date = date(qdate.year(), qdate.month(), qdate.day())
-            except Exception:
-                self._expiry_date = None
+            self._expiry_date = date(qdate.year(), qdate.month(), qdate.day())
             self.accept()
         except Exception as exc:
             logger.exception("Error in RestockDialog._on_accept: %s", exc)
-            QMessageBox.critical(
-                self,
-                self._translator["dialog.error_title"],
-                self._translator["inventory.dialog.error.operation_failed"].format(
-                    details=str(exc)
-                ),
-            )
+            QMessageBox.critical(self, self._translator["dialog.error_title"], str(exc))
 
-    def get_values(self) -> tuple[Decimal, Decimal, Optional[date]]:
-        return self._quantity, self._buy_price, self._expiry_date
+    # ✅ آپدیت خروجی برای برگرداندن ۴ مقدار (شامل sup_id)
+    def get_values(self) -> tuple[Decimal, Decimal, Optional[date], Optional[int]]:
+        return self._quantity, self._buy_price, self._expiry_date, self._selected_sup_id
+
 
 
 class WasteDialog(QDialog):
@@ -1017,6 +1032,7 @@ class ProductDialog(QDialog):
 
         self._translator = translator
         self._controller = controller
+        self._sup_controller = SupplierController()
         self._product_data: Optional[Dict[str, Any]] = product_data
         self._is_edit_mode: bool = self._product_data is not None
         self._product_id: Optional[int] = None
@@ -1033,6 +1049,7 @@ class ProductDialog(QDialog):
         self._last_lookup_manual: bool = False
 
         self._build_ui()
+        self._load_suppliers()
 
         # Capture the initial placeholder text for the product name field so
         # we can restore it after showing a temporary "searching..." message.
@@ -1090,6 +1107,12 @@ class ProductDialog(QDialog):
         self.spinMinStock.setGroupSeparatorShown(True)
 
         self.chkPerishable = QCheckBox(self)
+
+        self.cmbSupplier = QComboBox(self)
+        form_layout.addRow(
+            self._translator.get("inventory.restock.field.supplier", "Supplier"),
+            self.cmbSupplier,
+        )
 
         self.spinInitialQty = QDoubleSpinBox(self)
         self.spinInitialQty.setRange(0, 9999999999.0)
@@ -1747,6 +1770,7 @@ class ProductDialog(QDialog):
         is_perishable = self.chkPerishable.isChecked()
         initial_qty = self.spinInitialQty.value()
         buy_price = self.spinBuyPrice.value()
+        sup_id = self.cmbSupplier.currentData()
 
         if not name or not barcode or not category:
             QMessageBox.warning(
@@ -1792,6 +1816,7 @@ class ProductDialog(QDialog):
                     initial_quantity=initial_qty,
                     buy_price=buy_price,
                     expiry_date_jalali=expiry_date_jalali,
+                    sup_id=sup_id,
                 )
         except ValueError as exc:
             message = str(exc)
@@ -1816,6 +1841,17 @@ class ProductDialog(QDialog):
             return
 
         self.accept()
+    
+    def _load_suppliers(self) -> None:
+        """بارگذاری لیست تامین‌کنندگان در کمبوباکس"""
+        try:
+            suppliers = self._sup_controller.list_suppliers()
+            self.cmbSupplier.clear()
+            self.cmbSupplier.addItem("---", None)
+            for s in suppliers:
+                self.cmbSupplier.addItem(s["company_name"], s["sup_id"])
+        except Exception as exc:
+            logger.error("Error loading suppliers: %s", exc)
 
 class ExpiryReportDialog(QDialog):
     """

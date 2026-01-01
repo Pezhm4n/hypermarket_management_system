@@ -314,5 +314,21 @@
   "reports.chart.y_axis": "مبلغ فروش",
   "reports.export.no_data": "داده‌ای برای خروجی گرفتن وجود ندارد.",
   "reports.export.save_dialog_title": "ذخیره گزارش به صورت CSV",
-  "reports.export.success": "گزارش با موفقیت ذخیره شد."
+  "reports.export.success": "گزارش با موفقیت ذخیره شد.",
+
+  "suppliers.button.add": "افزودن تأمین‌کننده",
+  "suppliers.search_placeholder": "جستجوی تأمین‌کننده...",
+  "suppliers.table.column.name": "نام شرکت",
+  "suppliers.table.column.contact": "نام مسئول",
+  "suppliers.table.column.phone": "تلفن",
+  "suppliers.table.column.actions": "عملیات",
+  "suppliers.field.company_name": "نام شرکت:",
+  "suppliers.field.contact": "نام مسئول فروش:",
+  "suppliers.field.phone": "تلفن:",
+  "suppliers.field.email": "ایمیل:",
+  "suppliers.field.city": "شهر:",
+  "suppliers.field.street": "آدرس:",
+
+  "inventory.restock.field.supplier": "تأمین‌کننده",
+  "sidebar.suppliers": "تامین کنندگان"
 }

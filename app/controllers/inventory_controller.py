@@ -251,6 +251,7 @@ class InventoryController:
         initial_quantity: Any,
         buy_price: Any,
         expiry_date_jalali: Optional[str] = None,
+        sup_id: Optional[int] = None, # ✅ اضافه شد برای رفع خطای ورود کالا
     ) -> Product:
         """
         Create a new Product and an initial InventoryBatch in a single transaction.
@@ -258,7 +259,6 @@ class InventoryController:
         name = name.strip()
         barcode = self._validate_barcode(barcode)
         category_name = category_name.strip()
-
         if not name:
             raise ValueError("Product name is required.")
         if not category_name:
@@ -267,7 +267,6 @@ class InventoryController:
         base_price_dec = self._validate_price(base_price, "Base price")
         initial_qty_dec = self._validate_quantity(initial_quantity, "Initial quantity")
         buy_price_dec = self._validate_price(buy_price, "Purchase price")
-
         unit_value = (unit or "Pcs").strip() or "Pcs"
 
         expiry_date_gregorian: Optional[date] = None
@@ -312,6 +311,7 @@ class InventoryController:
                 if initial_qty_dec > 0:
                     batch = InventoryBatch(
                         ProdID=product.ProdID,
+                        SupID=sup_id,  # ✅ آی‌دی تامین‌کننده اینجا ذخیره می‌شود
                         OriginalQuantity=initial_qty_dec,
                         CurrentQuantity=initial_qty_dec,
                         BuyPrice=buy_price_dec,
@@ -320,14 +320,15 @@ class InventoryController:
                     session.add(batch)
 
                 logger.info(
-                    "Created product '%s' (Barcode=%s, ProdID=%s) with initial stock %.2f",
+                    "Created product '%s' (Barcode=%s, ProdID=%s) from SupID=%s with initial stock %.2f",
                     name,
                     barcode,
                     product.ProdID,
+                    sup_id,
                     float(initial_qty_dec),
                 )
-
                 return product
+
 
     def update_product(
         self,
@@ -743,3 +744,43 @@ class InventoryController:
                 "total_items": len(items),
                 "total_value": total_value,
             }
+
+    def add_stock(
+        self,
+        prod_id: int,
+        initial_qty: Any,
+        buy_price: Any,
+        expiry_date: Optional[date],
+        sup_id: Optional[int] = None,
+    ) -> bool:
+        """
+        Add stock for a product by creating a new InventoryBatch.
+        """
+        qty_dec = self._validate_quantity(initial_qty, "Initial quantity")
+        buy_price_dec = self._validate_price(buy_price, "Purchase price")
+        with self._get_session() as session:
+            try:
+                product: Optional[Product] = session.get(Product, prod_id)
+                if product is None:
+                    raise ValueError("Product not found.")
+                
+                batch = InventoryBatch(
+                    ProdID=prod_id,
+                    SupID=sup_id,
+                    OriginalQuantity=qty_dec,
+                    CurrentQuantity=qty_dec,
+                    BuyPrice=buy_price_dec,
+                    ExpiryDate=expiry_date,
+                )
+                session.add(batch)
+                session.commit()
+                
+                logger.info(
+                    "Added stock batch for ProdID=%s from SupID=%s: qty=%s",
+                    prod_id, sup_id, qty_dec
+                )
+                return True
+            except Exception as exc:
+                session.rollback()
+                logger.error("Error in add_stock: %s", exc)
+                return False
