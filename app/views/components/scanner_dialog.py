@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QCheckBox,
 )
 
 try:
@@ -41,94 +42,118 @@ class VideoCaptureWorker(QThread):
     def __init__(
         self,
         scanner: BarcodeScanner,
-        camera_index: int = 0,
+        use_droidcam: bool = False,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self._scanner = scanner
-        self._camera_index = camera_index
-        self._running = True
+        self._use_droidcam = use_droidcam
+        self._running = False
+        self._cap = None
 
     def _find_working_camera(self):
         """
-        Try camera indices with the MSMF backend and return the first
-        working capture.
+        Try to find and open a working camera based on user preference.
         """
-        indices = [0, 1, 2]
-        backend = getattr(cv2, "CAP_MSMF", cv2.CAP_ANY)
-        backend_name = "MSMF"
-
+        if self._use_droidcam:
+            # اولویت با DroidCam: ایندکس‌های 1, 2, 3
+            indices = [1, 2, 3]
+            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF]
+            camera_type = "DroidCam/External"
+        else:
+            # اولویت با Webcam داخلی: ایندکس 0
+            indices = [0]
+            backends = [cv2.CAP_MSMF, cv2.CAP_DSHOW, cv2.CAP_ANY]
+            camera_type = "Internal Webcam"
+        
+        logger.info(f"Searching for {camera_type}...")
+        
         for idx in indices:
-            if not self._running:
-                return None, -1
-
-            cap = None
-            try:
-                cap = cv2.VideoCapture(idx, backend)
-                if not cap.isOpened():
-                    cap.release()
-                    continue
-
-                # Force HD resolution to improve scan quality.
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            for backend in backends:
+                if not self._running:
+                    return None, -1
+                    
+                cap = None
                 try:
-                    cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
-                except Exception:
-                    # Some drivers may not support autofocus; ignore errors.
-                    pass
+                    backend_name = {
+                        cv2.CAP_DSHOW: "DSHOW",
+                        cv2.CAP_MSMF: "MSMF",
+                        cv2.CAP_ANY: "ANY"
+                    }.get(backend, str(backend))
+                    
+                    logger.debug(f"Trying Camera {idx} with backend {backend_name}")
+                    
+                    # تلاش برای باز کردن دوربین
+                    cap = cv2.VideoCapture(idx, backend)
+                    
+                    if not cap.isOpened():
+                        if cap is not None:
+                            cap.release()
+                        continue
 
-                # Warmup frames
-                valid = False
-                for _ in range(3):
-                    if not self._running:
-                        break
-                    ret, frame = cap.read()
-                    if (
-                        ret
-                        and frame is not None
-                        and hasattr(frame, "size")
-                        and frame.size > 0
-                    ):
-                        valid = True
-                        break
-
-                if not valid or not self._running:
-                    cap.release()
+                    # تنظیم کیفیت تصویر
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    
+                    # تست خواندن فریم - چند بار تلاش می‌کنیم
+                    success = False
+                    for attempt in range(3):
+                        ret, frame = cap.read()
+                        if ret and frame is not None and frame.size > 0:
+                            success = True
+                            break
+                        self.msleep(100)
+                    
+                    if success:
+                        logger.info(
+                            f"✓ Successfully connected to Camera {idx} "
+                            f"using backend {backend_name} ({camera_type})"
+                        )
+                        return cap, idx
+                    else:
+                        logger.debug(f"Camera {idx} opened but failed to read frames")
+                        cap.release()
+                        
+                except Exception as exc:
+                    logger.debug(f"Failed Camera {idx} with backend {backend_name}: {exc}")
+                    if cap is not None:
+                        try:
+                            cap.release()
+                        except:
+                            pass
                     continue
-
-                logger.info(
-                    "Connected to Camera %s using %s", idx, backend_name
-                )
-                return cap, idx
-            except Exception as exc:
-                logger.error("Error probing camera %s: %s", idx, exc)
-                if cap is not None:
-                    cap.release()
-                continue
-
+        
+        logger.error(f"No working {camera_type} found")
         return None, -1
 
     def run(self) -> None:
+        self._running = True
+        
         cap, idx = self._find_working_camera()
 
         if cap is None:
             if self._running:
-                self.camera_error.emit("Camera not found")
+                camera_type = "DroidCam" if self._use_droidcam else "Internal Webcam"
+                self.camera_error.emit(f"{camera_type} not found")
             return
 
-        self._camera_index = idx
+        self._cap = cap
         self._frame_counter = 0
 
         try:
             while self._running:
-                ret, frame = cap.read()
+                if not self._cap or not self._cap.isOpened():
+                    break
+                    
+                ret, frame = self._cap.read()
                 if not ret or frame is None:
                     self.msleep(50)
                     continue
 
                 # Always send the original frame to the UI for preview
-                self.frame_ready.emit(frame)
+                if self._running:
+                    self.frame_ready.emit(frame)
 
                 # Throttle decoding to reduce load on ZBar/pyzbar and avoid crashes
                 self._frame_counter += 1
@@ -154,14 +179,25 @@ class VideoCaptureWorker(QThread):
                     break
 
                 self.msleep(30)
+                
         except Exception as exc:
             logger.error("Worker loop error: %s", exc)
         finally:
-            cap.release()
+            self._cleanup_camera()
+
+    def _cleanup_camera(self):
+        """آزاد سازی منابع دوربین"""
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception as exc:
+                logger.error(f"Error releasing camera: {exc}")
+            finally:
+                self._cap = None
 
     def stop(self) -> None:
+        """متوقف کردن thread به صورت ایمن"""
         self._running = False
-        # Do not wait here to avoid blocking the UI; the loop will exit shortly.
 
 
 class ScannerDialog(QDialog):
@@ -182,11 +218,10 @@ class ScannerDialog(QDialog):
         self._scanner = BarcodeScanner()
         self._worker: Optional[VideoCaptureWorker] = None
         self._found_barcode: Optional[str] = None
-        # Prevent immediate re-scan of a previous frame on dialog reopen
         self._scan_enabled: bool = False
+        self._camera_started: bool = False  # برای چک کردن آیا دوربین شروع شده یا نه
 
         self._build_ui()
-        # NOTE: camera is started in showEvent, not here.
 
     # ------------------------------------------------------------------ #
     # UI helpers
@@ -198,31 +233,78 @@ class ScannerDialog(QDialog):
 
     def _build_ui(self) -> None:
         self.setModal(True)
-        self.setMinimumSize(640, 480)
+        self.setMinimumSize(640, 560)
         self.setWindowTitle(self._tr("scanner.dialog.title", "Scan Barcode"))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        # Camera selection checkbox - در بالای همه
+        camera_selection_layout = QHBoxLayout()
+        camera_selection_layout.setSpacing(12)
+        
+        self.chkUseDroidCam = QCheckBox(self)
+        self.chkUseDroidCam.setText(
+            self._tr("scanner.checkbox.use_droidcam", "Use DroidCam (External Camera)")
+        )
+        self.chkUseDroidCam.setChecked(False)  # پیش‌فرض: Webcam داخلی
+        self.chkUseDroidCam.setStyleSheet("font-weight: bold;")
+        camera_selection_layout.addWidget(self.chkUseDroidCam)
+        
+        # دکمه شروع دوربین
+        self.btnStartCamera = QPushButton(self)
+        self.btnStartCamera.setText(
+            self._tr("scanner.button.start_camera", "Start Camera")
+        )
+        self.btnStartCamera.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        self.btnStartCamera.clicked.connect(self._on_start_camera_clicked)
+        camera_selection_layout.addWidget(self.btnStartCamera)
+        
+        camera_selection_layout.addStretch()
+        layout.addLayout(camera_selection_layout)
+
+        # Video preview area
         self.lblVideo = QLabel(self)
         self.lblVideo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lblVideo.setMinimumSize(480, 320)
         self.lblVideo.setStyleSheet(
             "background-color: #000000; border: 1px solid #444444;"
         )
+        self.lblVideo.setText(
+            self._tr(
+                "scanner.label.select_camera",
+                "Select camera type and click 'Start Camera'"
+            )
+        )
         layout.addWidget(self.lblVideo)
 
+        # Status label
         self.lblStatus = QLabel(self)
         self.lblStatus.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lblStatus.setText(
             self._tr(
-                "scanner.status.initializing",
-                "Initializing camera ...",
+                "scanner.status.ready",
+                "Ready to scan",
             )
         )
         layout.addWidget(self.lblStatus)
 
+        # Buttons
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
 
@@ -244,34 +326,63 @@ class ScannerDialog(QDialog):
     # ------------------------------------------------------------------ #
     # Camera handling
     # ------------------------------------------------------------------ #
-    def _start_camera(self) -> None:
+    def _on_start_camera_clicked(self) -> None:
+        """وقتی کاربر دکمه Start Camera را میزند"""
+        # اگر دوربین در حال کار است، آن را متوقف کرده و دوباره شروع کنیم
+        if self._camera_started:
+            self._stop_worker()
+            QTimer.singleShot(300, lambda: self._start_camera(use_droidcam=self.chkUseDroidCam.isChecked()))
+        else:
+            self._start_camera(use_droidcam=self.chkUseDroidCam.isChecked())
+
+    def _start_camera(self, use_droidcam: bool = False) -> None:
+        """شروع دوربین با توجه به انتخاب کاربر"""
+        self._camera_started = True
+        
         # Disable scanning briefly after (re)start to avoid instant reuse
         self._scan_enabled = False
         QTimer.singleShot(
             1000, lambda: setattr(self, "_scan_enabled", True)
         )
 
-        # Ensure UI shows a loading state until first frame arrives
+        # Clear UI
         if hasattr(self, "lblVideo") and self.lblVideo is not None:
             self.lblVideo.clear()
+        
+        camera_type = "DroidCam" if use_droidcam else "Webcam"
         if hasattr(self, "lblStatus") and self.lblStatus is not None:
             self.lblStatus.setText(
                 self._tr(
                     "scanner.status.initializing",
-                    "Starting camera ...",
+                    f"Starting {camera_type}...",
                 )
             )
 
-        self._worker = VideoCaptureWorker(self._scanner, parent=self)
+        # غیرفعال کردن controls در حین اتصال
+        self.chkUseDroidCam.setEnabled(False)
+        self.btnStartCamera.setEnabled(False)
+        self.btnStartCamera.setText(
+            self._tr("scanner.button.connecting", "Connecting...")
+        )
+
+        self._worker = VideoCaptureWorker(
+            self._scanner, 
+            use_droidcam=use_droidcam,
+            parent=self
+        )
         self._worker.frame_ready.connect(self._on_frame_ready)
         self._worker.barcode_found.connect(self._on_barcode_from_camera)
         self._worker.camera_error.connect(self._on_camera_error)
         self._worker.start()
 
     def _stop_worker(self) -> None:
+        """متوقف کردن worker thread به صورت ایمن و کامل"""
         if self._worker is not None:
             try:
-                # Disconnect signals to prevent callbacks from a dead thread.
+                # ابتدا سیگنال stop را ارسال کنیم
+                self._worker.stop()
+                
+                # Disconnect signals to prevent callbacks from a dead thread
                 try:
                     self._worker.barcode_found.disconnect()
                 except Exception:
@@ -285,14 +396,28 @@ class ScannerDialog(QDialog):
                 except Exception:
                     pass
 
-                self._worker.stop()
-                self._worker.quit()
-                self._worker.wait(200)
+                # منتظر می‌مانیم تا thread به طور کامل متوقف شود
+                if self._worker.isRunning():
+                    self._worker.quit()
+                    if not self._worker.wait(2000):  # 2 ثانیه timeout
+                        logger.warning("Worker thread did not stop gracefully, terminating...")
+                        self._worker.terminate()
+                        self._worker.wait(1000)
+                
+                # پاکسازی نهایی
                 self._worker.deleteLater()
+                
             except Exception as exc:
                 logger.exception("Error stopping VideoCaptureWorker: %s", exc)
             finally:
                 self._worker = None
+                self._camera_started = False
+                # فعال کردن مجدد controls
+                self.chkUseDroidCam.setEnabled(True)
+                self.btnStartCamera.setEnabled(True)
+                self.btnStartCamera.setText(
+                    self._tr("scanner.button.start_camera", "Start Camera")
+                )
 
     # ------------------------------------------------------------------ #
     # Slots
@@ -317,7 +442,6 @@ class ScannerDialog(QDialog):
             pixmap = QPixmap.fromImage(image)
             if not pixmap.isNull():
                 # During the initial warmup period, keep the video area blank
-                # so the user does not see a stale frame from a previous scan.
                 if not self._scan_enabled:
                     return
 
@@ -328,9 +452,19 @@ class ScannerDialog(QDialog):
                         Qt.TransformationMode.SmoothTransformation,
                     )
                 )
+                camera_type = "DroidCam" if self.chkUseDroidCam.isChecked() else "Webcam"
                 self.lblStatus.setText(
-                    self._tr("scanner.status.scanning", "Scanning...")
+                    self._tr("scanner.status.scanning", f"Scanning with {camera_type}...")
                 )
+                
+                # تغییر متن دکمه به Restart
+                if self.btnStartCamera.isEnabled() == False:
+                    self.btnStartCamera.setEnabled(True)
+                    self.btnStartCamera.setText(
+                        self._tr("scanner.button.restart_camera", "Restart Camera")
+                    )
+                    self.chkUseDroidCam.setEnabled(True)
+                    
         except Exception as exc:
             logger.exception("Error updating camera frame: %s", exc)
 
@@ -339,10 +473,23 @@ class ScannerDialog(QDialog):
             message
             or self._tr(
                 "scanner.status.no_camera",
-                "Camera not found - Please load an image",
+                "Camera not found - Please try another option or load an image",
             )
         )
         self.lblVideo.clear()
+        self.lblVideo.setText(
+            self._tr(
+                "scanner.label.camera_error",
+                "Camera not found!\nTry changing the camera type or load an image."
+            )
+        )
+        # فعال کردن مجدد controls در صورت خطا
+        self.chkUseDroidCam.setEnabled(True)
+        self.btnStartCamera.setEnabled(True)
+        self.btnStartCamera.setText(
+            self._tr("scanner.button.start_camera", "Start Camera")
+        )
+        self._camera_started = False
 
     def _on_barcode_from_camera(self, code: str) -> None:
         # Ignore early or empty reads
@@ -401,29 +548,58 @@ class ScannerDialog(QDialog):
     def showEvent(self, event) -> None:  # type: ignore[override]
         """
         Reset state each time the dialog is shown so we always start fresh.
-        Also clear any stale frame so the user does not see the previous image.
         """
-        # Strict state reset before probing the camera
         self._found_barcode = None
+        self._camera_started = False
 
-        # Clear any previous pixmap immediately to avoid ghost frames
+        # Clear any previous pixmap
         if hasattr(self, "lblVideo") and self.lblVideo is not None:
             self.lblVideo.clear()
-            # Optional: keep background black via stylesheet already set in _build_ui
-
-        # Show explicit feedback while camera is initializing
-        if hasattr(self, "lblStatus") and self.lblStatus is not None:
-            self.lblStatus.setText(
+            self.lblVideo.setText(
                 self._tr(
-                    "scanner.status.initializing",
-                    "Starting camera ...",
+                    "scanner.label.select_camera",
+                    "Select camera type and click 'Start Camera'"
                 )
             )
 
+        # Reset status
+        if hasattr(self, "lblStatus") and self.lblStatus is not None:
+            self.lblStatus.setText(
+                self._tr(
+                    "scanner.status.ready",
+                    "Ready to scan",
+                )
+            )
+
+        # Reset controls
+        if hasattr(self, "btnStartCamera"):
+            self.btnStartCamera.setEnabled(True)
+            self.btnStartCamera.setText(
+                self._tr("scanner.button.start_camera", "Start Camera")
+            )
+        if hasattr(self, "chkUseDroidCam"):
+            self.chkUseDroidCam.setEnabled(True)
+
+        # Stop any existing worker
         self._stop_worker()
-        self._start_camera()
+        
         super().showEvent(event)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
+        """بستن ایمن دیالوگ با اطمینان از آزادسازی تمام منابع"""
         self._stop_worker()
+        
+        if hasattr(self, "lblVideo") and self.lblVideo is not None:
+            self.lblVideo.clear()
+        
         super().closeEvent(event)
+        
+    def reject(self) -> None:
+        """Override reject to ensure proper cleanup"""
+        self._stop_worker()
+        super().reject()
+        
+    def accept(self) -> None:
+        """Override accept to ensure proper cleanup"""
+        self._stop_worker()
+        super().accept()
