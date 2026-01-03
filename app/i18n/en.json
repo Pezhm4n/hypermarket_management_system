@@ -479,5 +479,21 @@
   "inventory.inventory_report.csv.header.avg_price": "Avg Buy Price",
   "inventory.inventory_report.csv.header.value": "Total Value",
   "inventory.inventory_report.csv.total_label": "Total:",
-  "inventory.inventory_report.error.no_data": "No data to export."
+  "inventory.inventory_report.error.no_data": "No data to export.",
+  "inventory.expiry_report.field.days_suffix": " days",
+  "inventory.dialog.error.no_barcode_for_lookup": "Please enter a barcode before searching online.",
+  "inventory.dialog.info.lookup_in_progress": "An online lookup is already in progress.",
+  "inventory.dialog.info.no_term_for_price_lookup": "Please enter a product name or barcode before opening Torob.",
+  "inventory.dialog.error.torob_open_failed": "Could not open Torob in your default browser.",
+  "suppliers.table.column.id": "ID",
+  "suppliers.dialog.error.name_phone_required": "Name and Phone are required.",
+  "users.dialog.field.national_id": "National ID",
+  "users.dialog.field.hire_date": "Hire Date",
+  "users.dialog.field.confirm_password": "Confirm password",
+  "users.dialog.error.name_letters_only": "First and last name must contain English letters only.",
+  "users.dialog.error.national_id_invalid": "National ID must be exactly 10 digits.",
+  "users.dialog.error.mobile_invalid": "Mobile number must start with '09' and be 11 digits.",
+  "users.dialog.error.password_min_length": "Password must be at least 4 characters long.",
+  "users.dialog.error.password_mismatch": "Password and confirmation do not match.",
+  "scanner.dialog.file_filter": "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
 }

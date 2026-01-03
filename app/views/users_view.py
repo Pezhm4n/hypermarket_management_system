@@ -356,12 +356,18 @@ class UserDialog(QDialog):
             self._translator["users.dialog.field.last_name"],
             self.txtLastName,
         )
-        form_layout.addRow("National ID", self.txtNationalID)
+        form_layout.addRow(
+            self._translator["users.dialog.field.national_id"],
+            self.txtNationalID,
+        )
         form_layout.addRow(
             self._translator["users.dialog.field.mobile"],
             self.txtMobile,
         )
-        form_layout.addRow("Hire Date", self.dateHireDate)
+        form_layout.addRow(
+            self._translator["users.dialog.field.hire_date"],
+            self.dateHireDate,
+        )
         form_layout.addRow(
             self._translator["users.dialog.field.username"],
             self.txtUsername,
@@ -370,7 +376,10 @@ class UserDialog(QDialog):
             self._translator["users.dialog.field.password"],
             self.txtPassword,
         )
-        form_layout.addRow("Confirm password", self.txtConfirmPassword)
+        form_layout.addRow(
+            self._translator["users.dialog.field.confirm_password"],
+            self.txtConfirmPassword,
+        )
         form_layout.addRow(
             self._translator["users.dialog.field.role"],
             self.cmbRole,
@@ -477,7 +486,7 @@ class UserDialog(QDialog):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                "First and last name must contain English letters only.",
+                self._translator["users.dialog.error.name_letters_only"],
             )
             return
 
@@ -486,7 +495,7 @@ class UserDialog(QDialog):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                "National ID must be exactly 10 digits.",
+                self._translator["users.dialog.error.national_id_invalid"],
             )
             return
 
@@ -495,7 +504,7 @@ class UserDialog(QDialog):
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
-                "Mobile number must start with '09' and be 11 digits.",
+                self._translator["users.dialog.error.mobile_invalid"],
             )
             return
 
@@ -524,14 +533,14 @@ class UserDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     self._translator["dialog.warning_title"],
-                    "Password must be at least 4 characters long.",
+                    self._translator["users.dialog.error.password_min_length"],
                 )
                 return
             if password != confirm_password:
                 QMessageBox.warning(
                     self,
                     self._translator["dialog.warning_title"],
-                    "Password and confirmation do not match.",
+                    self._translator["users.dialog.error.password_mismatch"],
                 )
                 return
 

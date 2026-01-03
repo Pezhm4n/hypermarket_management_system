@@ -71,19 +71,26 @@ class SuppliersView(QWidget):
         super().__init__(parent)
         self._translator = translation_manager
         self._controller = SupplierController()
+
         self._setup_ui()
         self._load_data()
+
+        # react to language changes
+        try:
+            self._translator.language_changed.connect(self._on_language_changed)
+        except Exception:
+            logger.debug("Failed to connect SuppliersView to language_changed signal", exc_info=True)
+        self._apply_translations()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
         # ردیف بالا: دکمه افزودن و جستجو
         top_layout = QHBoxLayout()
-        self.btnAddSupplier = QPushButton(self._translator.get("suppliers.button.add", "Add Supplier"))
+        self.btnAddSupplier = QPushButton(self)
         self.btnAddSupplier.clicked.connect(self._on_add_clicked)
-        
-        self.txtSearch = QLineEdit()
-        self.txtSearch.setPlaceholderText(self._translator.get("suppliers.search_placeholder", "Search suppliers..."))
+
+        self.txtSearch = QLineEdit(self)
         self.txtSearch.textChanged.connect(self._load_data)
 
         top_layout.addWidget(self.btnAddSupplier)
@@ -92,19 +99,36 @@ class SuppliersView(QWidget):
         layout.addLayout(top_layout)
 
         # جدول
-        self.table = QTableWidget()
+        self.table = QTableWidget(self)
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels([
-            "ID", 
-            self._translator.get("suppliers.table.column.name", "Company"),
-            self._translator.get("suppliers.table.column.contact", "Contact"),
-            self._translator.get("suppliers.table.column.phone", "Phone"),
-            self._translator.get("suppliers.table.column.actions", "Actions")
-        ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self.table)
+
+    def _apply_translations(self) -> None:
+        """Apply localized texts to suppliers page widgets."""
+        try:
+            self.btnAddSupplier.setText(
+                self._translator.get("suppliers.button.add", "Add Supplier")
+            )
+            self.txtSearch.setPlaceholderText(
+                self._translator.get("suppliers.search_placeholder", "Search suppliers...")
+            )
+            headers = [
+                self._translator.get("suppliers.table.column.id", "ID"),
+                self._translator.get("suppliers.table.column.name", "Company Name"),
+                self._translator.get("suppliers.table.column.contact", "Contact Person"),
+                self._translator.get("suppliers.table.column.phone", "Phone"),
+                self._translator.get("suppliers.table.column.actions", "Actions"),
+            ]
+            self.table.setHorizontalHeaderLabels(headers)
+        except Exception as e:
+            logger.error("Error applying translations in SuppliersView: %s", e, exc_info=True)
+
+    def _on_language_changed(self, language: str) -> None:
+        _ = language
+        self._apply_translations()
 
     def _load_data(self):
         search_text = self.txtSearch.text()
@@ -133,7 +157,14 @@ class SuppliersView(QWidget):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             vals = dialog.get_values()
             if not vals["name"] or not vals["phone"]:
-                QMessageBox.warning(self, "Error", "Name and Phone are required.")
+                QMessageBox.warning(
+                    self,
+                    self._translator.get("dialog.warning_title", "Warning"),
+                    self._translator.get(
+                        "suppliers.dialog.error.name_phone_required",
+                        "Name and Phone are required.",
+                    ),
+                )
                 return
             self._controller.create_supplier(**vals)
             self._load_data()

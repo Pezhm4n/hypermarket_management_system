@@ -481,5 +481,21 @@
   "inventory.inventory_report.csv.header.value": "ارزش کل",
   "inventory.inventory_report.csv.total_label": "جمع کل:",
   
-  "inventory.inventory_report.error.no_data": "داده‌ای برای خروجی گرفتن وجود ندارد."
+  "inventory.inventory_report.error.no_data": "داده‌ای برای خروجی گرفتن وجود ندارد.",
+  "inventory.expiry_report.field.days_suffix": " روز",
+  "inventory.dialog.error.no_barcode_for_lookup": "لطفاً قبل از جستجوی آنلاین بارکد را وارد کنید.",
+  "inventory.dialog.info.lookup_in_progress": "یک جستجوی آنلاین هم‌اکنون در حال انجام است.",
+  "inventory.dialog.info.no_term_for_price_lookup": "لطفاً قبل از باز کردن ترب، نام کالا یا بارکد را وارد کنید.",
+  "inventory.dialog.error.torob_open_failed": "امکان باز کردن وب‌سایت ترب در مرورگر پیش‌فرض وجود ندارد.",
+  "suppliers.table.column.id": "شناسه",
+  "suppliers.dialog.error.name_phone_required": "نام شرکت و تلفن الزامی هستند.",
+  "users.dialog.field.national_id": "کد ملی",
+  "users.dialog.field.hire_date": "تاریخ استخدام",
+  "users.dialog.field.confirm_password": "تکرار رمز عبور",
+  "users.dialog.error.name_letters_only": "نام و نام خانوادگی باید فقط شامل حروف انگلیسی باشند.",
+  "users.dialog.error.national_id_invalid": "کد ملی باید دقیقاً ۱۰ رقم باشد.",
+  "users.dialog.error.mobile_invalid": "شماره موبایل باید با ۰۹ شروع شده و ۱۱ رقم باشد.",
+  "users.dialog.error.password_min_length": "رمز عبور باید حداقل ۴ کاراکتر باشد.",
+  "users.dialog.error.password_mismatch": "رمز عبور و تکرار آن یکسان نیستند.",
+  "scanner.dialog.file_filter": "فایل‌های تصویر (*.png *.jpg *.jpeg *.bmp *.gif)"
 }

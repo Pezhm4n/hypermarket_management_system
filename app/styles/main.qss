@@ -55,6 +55,7 @@ QFrame#HeaderBar {
 QLabel#HeaderTitle {
     font-size: 15pt;
     font-weight: 600;
+    qproperty-wordWrap: true;
 }
 
 QLabel#HeaderSubtitle {
@@ -189,6 +190,13 @@ QDoubleSpinBox {
     background-color: #020617;
 }
 
+/* Ensure spinbox text has room before arrow buttons */
+QSpinBox,
+QDoubleSpinBox {
+    padding-left: 8px;
+    padding-right: 28px;
+}
+
 /* Tables */
 QHeaderView::section {
     background-color: #111827;
@@ -234,7 +242,7 @@ QPushButton {
     background-color: #0ea5e9;      /* Sky 500 */
     color: #020617;
     border-radius: 6px;
-    padding: 6px 12px;
+    padding: 5px 10px;
     border: none;
 }
 

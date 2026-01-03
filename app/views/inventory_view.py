@@ -750,10 +750,13 @@ class InventoryView(QWidget):
         
         # ۱. انتخاب فایل توسط کاربر
         file_path, _ = QFileDialog.getOpenFileName(
-            self, 
-            self._translator.get("excel.dialog.select_file", "انتخاب فایل اکسل"), 
-            "", 
-            "Excel Files (*.xlsx *.xls)"
+            self,
+            self._translator.get("excel.dialog.select_file", "انتخاب فایل اکسل"),
+            "",
+            self._translator.get(
+                "excel.dialog.file_filter",
+                "Excel Files (*.xlsx *.xls)",
+            ),
         )
         
         if not file_path:
@@ -797,7 +800,14 @@ class InventoryView(QWidget):
 
         except Exception as e:
             logger.exception("Excel Import Error")
-            QMessageBox.critical(self, "Error", f"Error: {str(e)}")
+            QMessageBox.critical(
+                self,
+                self._translator.get("dialog.error_title", "Error"),
+                self._translator.get(
+                    "excel.error.read_failed",
+                    "Failed to read Excel file: {error}",
+                ).format(error=str(e)),
+            )
 
 
 class RestockDialog(QDialog):
@@ -2195,6 +2205,44 @@ class ExpiryReportDialog(QDialog):
                 </tr>
                 """
 
+            title = self._translator.get(
+                "inventory.expiry_report.pdf.title",
+                "Products Near Expiry Report",
+            )
+            date_text = self._translator.get(
+                "inventory.expiry_report.pdf.date",
+                "Report Date: {date}",
+            ).format(date=datetime.now().strftime("%Y-%m-%d %H:%M"))
+            filter_text = self._translator.get(
+                "inventory.expiry_report.pdf.filter",
+                "Filter: Products under {days} days",
+            ).format(days=self._current_days)
+
+            header_name = self._translator.get(
+                "inventory.expiry_report.table.column.name",
+                "Product Name",
+            )
+            header_barcode = self._translator.get(
+                "inventory.expiry_report.table.column.barcode",
+                "Barcode",
+            )
+            header_batch = self._translator.get(
+                "inventory.expiry_report.table.column.batch",
+                "Batch",
+            )
+            header_quantity = self._translator.get(
+                "inventory.expiry_report.table.column.quantity",
+                "Quantity",
+            )
+            header_expiry = self._translator.get(
+                "inventory.expiry_report.table.column.expiry",
+                "Expiry Date",
+            )
+            header_days_left = self._translator.get(
+                "inventory.expiry_report.table.column.days_left",
+                "Days Left",
+            )
+
             html = f"""
             <html dir="rtl">
             <head>
@@ -2221,18 +2269,18 @@ class ExpiryReportDialog(QDialog):
                 </style>
             </head>
             <body>
-                <h1>گزارش کالاهای نزدیک به انقضا</h1>
-                <p>تاریخ گزارش: {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
-                <p>فیلتر: کالاهای زیر {self._current_days} روز</p>
+                <h1>{title}</h1>
+                <p>{date_text}</p>
+                <p>{filter_text}</p>
                 <table>
                     <thead>
                         <tr>
-                            <th>نام کالا</th>
-                            <th>بارکد</th>
-                            <th>بچ</th>
-                            <th>موجودی</th>
-                            <th>تاریخ انقضا</th>
-                            <th>روز مانده</th>
+                            <th>{header_name}</th>
+                            <th>{header_barcode}</th>
+                            <th>{header_batch}</th>
+                            <th>{header_quantity}</th>
+                            <th>{header_expiry}</th>
+                            <th>{header_days_left}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2509,6 +2557,56 @@ class InventoryReportDialog(QDialog):
             )
             total_items = self._summary_data.get("total_items", 0)
 
+            title = self._translator.get(
+                "inventory.inventory_report.pdf.title",
+                "Inventory Stock Report",
+            )
+            date_text = self._translator.get(
+                "inventory.inventory_report.pdf.date",
+                "Report Date: {date}",
+            ).format(date=datetime.now().strftime("%Y-%m-%d %H:%M"))
+            total_items_text = self._translator.get(
+                "inventory.inventory_report.pdf.total_items",
+                "Total Items: {count}",
+            ).format(count=total_items)
+            total_value_text = self._translator.get(
+                "inventory.inventory_report.pdf.total_value",
+                "Total Inventory Value: {value} Rials",
+            ).format(value=total_value)
+
+            header_name = self._translator.get(
+                "inventory.inventory_report.csv.header.name",
+                "Product Name",
+            )
+            header_barcode = self._translator.get(
+                "inventory.inventory_report.csv.header.barcode",
+                "Barcode",
+            )
+            header_category = self._translator.get(
+                "inventory.inventory_report.csv.header.category",
+                "Category",
+            )
+            header_unit = self._translator.get(
+                "inventory.inventory_report.csv.header.unit",
+                "Unit",
+            )
+            header_quantity = self._translator.get(
+                "inventory.inventory_report.csv.header.quantity",
+                "Quantity",
+            )
+            header_avg_price = self._translator.get(
+                "inventory.inventory_report.csv.header.avg_price",
+                "Avg Buy Price",
+            )
+            header_value = self._translator.get(
+                "inventory.inventory_report.csv.header.value",
+                "Total Value",
+            )
+            total_label = self._translator.get(
+                "inventory.inventory_report.pdf.table.total_label",
+                "Total",
+            )
+
             html = f"""
             <html dir="rtl">
             <head>
@@ -2524,28 +2622,28 @@ class InventoryReportDialog(QDialog):
                 </style>
             </head>
             <body>
-                <h1>گزارش موجودی کل انبار</h1>
+                <h1>{title}</h1>
                 <div class="summary">
-                    <p>تاریخ گزارش: {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
-                    <p>تعداد کل اقلام: {total_items}</p>
-                    <p style="font-size: 12pt; font-weight: bold;">ارزش کل انبار: {total_value} ریال</p>
+                    <p>{date_text}</p>
+                    <p>{total_items_text}</p>
+                    <p style="font-size: 12pt; font-weight: bold;">{total_value_text}</p>
                 </div>
                 <table>
                     <thead>
                         <tr>
-                            <th>نام کالا</th>
-                            <th>بارکد</th>
-                            <th>دسته‌بندی</th>
-                            <th>واحد</th>
-                            <th>موجودی</th>
-                            <th>میانگین قیمت خرید</th>
-                            <th>ارزش کل</th>
+                            <th>{header_name}</th>
+                            <th>{header_barcode}</th>
+                            <th>{header_category}</th>
+                            <th>{header_unit}</th>
+                            <th>{header_quantity}</th>
+                            <th>{header_avg_price}</th>
+                            <th>{header_value}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {rows_html}
                         <tr class="total-row">
-                            <td colspan="6" style="text-align:left;">جمع کل</td>
+                            <td colspan="6" style="text-align:left;">{total_label}</td>
                             <td style="text-align:right;">{total_value}</td>
                         </tr>
                     </tbody>
@@ -2616,13 +2714,34 @@ class InventoryReportDialog(QDialog):
                 # Headers
                 writer.writerow(
                     [
-                        "نام کالا",
-                        "بارکد",
-                        "دسته‌بندی",
-                        "واحد",
-                        "موجودی",
-                        "میانگین قیمت خرید",
-                        "ارزش کل",
+                        self._translator.get(
+                            "inventory.inventory_report.csv.header.name",
+                            "Product Name",
+                        ),
+                        self._translator.get(
+                            "inventory.inventory_report.csv.header.barcode",
+                            "Barcode",
+                        ),
+                        self._translator.get(
+                            "inventory.inventory_report.csv.header.category",
+                            "Category",
+                        ),
+                        self._translator.get(
+                            "inventory.inventory_report.csv.header.unit",
+                            "Unit",
+                        ),
+                        self._translator.get(
+                            "inventory.inventory_report.csv.header.quantity",
+                            "Quantity",
+                        ),
+                        self._translator.get(
+                            "inventory.inventory_report.csv.header.avg_price",
+                            "Avg Buy Price",
+                        ),
+                        self._translator.get(
+                            "inventory.inventory_report.csv.header.value",
+                            "Total Value",
+                        ),
                     ]
                 )
 
@@ -2649,7 +2768,10 @@ class InventoryReportDialog(QDialog):
                         "",
                         "",
                         "",
-                        "جمع کل:",
+                        self._translator.get(
+                            "inventory.inventory_report.csv.total_label",
+                            "Total:",
+                        ),
                         float(self._summary_data.get("total_value", Decimal("0"))),
                     ]
                 )

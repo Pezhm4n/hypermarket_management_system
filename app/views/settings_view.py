@@ -31,6 +31,7 @@ from app.config import CONFIG, ROOT_DIR
 from app.controllers.auth_controller import AuthController
 from app.controllers.user_controller import UserController
 from app.core.database_manager import DatabaseManager
+from app.core.settings_manager import SettingsManager
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
 
@@ -61,18 +62,15 @@ class SettingsView(QWidget):
         self._database_manager = DatabaseManager()
         self._db_path: Path = CONFIG.sqlite_db_path
 
-        # Capture base font size once so we can reset before theme changes
-        app = QApplication.instance()
-        if app is not None:
-            self._base_font_point_size = app.font().pointSize() or 12
-        else:
-            self._base_font_point_size = 12
+        # Logical base font size used for scaling options (small/medium/large)
+        self._base_font_point_size = 12
 
         self._build_ui()
         self._connect_signals()
 
         self._translator.language_changed.connect(self._on_language_changed)
         self._apply_translations()
+        self._load_ui_preferences()
         self._load_store_settings()
 
     # ------------------------------------------------------------------ #
@@ -505,11 +503,15 @@ class SettingsView(QWidget):
             current_theme = self.cmbTheme.currentIndex()
             self.cmbTheme.blockSignals(True)
             self.cmbTheme.clear()
+            # Store the underlying Qt Material theme names as item data so that
+            # they can be persisted in SettingsManager.
             self.cmbTheme.addItem(
-                self._translator["settings.theme.option.dark_teal"], "default"
+                self._translator["settings.theme.option.dark_teal"],
+                "dark_teal.xml",
             )
             self.cmbTheme.addItem(
-                self._translator["settings.theme.option.light"], "light"
+                self._translator["settings.theme.option.light"],
+                "light_blue.xml",
             )
             if 0 <= current_theme < self.cmbTheme.count():
                 self.cmbTheme.setCurrentIndex(current_theme)
@@ -519,6 +521,8 @@ class SettingsView(QWidget):
             current_scale = self.cmbFontScale.currentIndex()
             self.cmbFontScale.blockSignals(True)
             self.cmbFontScale.clear()
+            # Item data holds symbolic keys; actual numeric scale is persisted
+            # via SettingsManager.
             self.cmbFontScale.addItem(
                 self._translator["settings.font_scale.option.small"], "small"
             )
@@ -621,6 +625,71 @@ class SettingsView(QWidget):
             logger.error("Error in _apply_permissions: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------ #
+    # Load persisted visual preferences
+    # ------------------------------------------------------------------ #
+    def _load_ui_preferences(self) -> None:
+        """
+        Initialise theme, language and font scale selectors from persisted settings.
+        """
+        try:
+            settings = SettingsManager.load_settings()
+
+            # Theme combo
+            theme_value = settings.get("theme", "dark_teal.xml")
+            if isinstance(theme_value, str):
+                index = -1
+                for i in range(self.cmbTheme.count()):
+                    if self.cmbTheme.itemData(i) == theme_value:
+                        index = i
+                        break
+                if index >= 0:
+                    self.cmbTheme.blockSignals(True)
+                    self.cmbTheme.setCurrentIndex(index)
+                    self.cmbTheme.blockSignals(False)
+
+            # Font scale combo
+            raw_scale = settings.get("font_scale", 1.0)
+            try:
+                scale_value = float(raw_scale)
+            except (TypeError, ValueError):
+                scale_value = 1.0
+
+            scale_map = {"small": 0.9, "medium": 1.0, "large": 1.1}
+            # Find the nearest symbolic scale key
+            selected_key = "medium"
+            min_diff = float("inf")
+            for key, numeric in scale_map.items():
+                diff = abs(numeric - scale_value)
+                if diff < min_diff:
+                    selected_key = key
+                    min_diff = diff
+
+            self.cmbFontScale.blockSignals(True)
+            font_index = self.cmbFontScale.findData(selected_key)
+            if font_index == -1:
+                font_index = 1  # medium
+            self.cmbFontScale.setCurrentIndex(font_index)
+            self.cmbFontScale.blockSignals(False)
+            # Apply the font scale to the QApplication
+            self._on_font_scale_changed(font_index)
+
+            # Language combo (if present)
+            if hasattr(self, "cmbLanguage"):
+                current_lang = str(
+                    settings.get(
+                        "language",
+                        getattr(self._translator, "language", "fa"),
+                    )
+                )
+                idx = self.cmbLanguage.findData(current_lang)
+                if idx >= 0:
+                    self.cmbLanguage.blockSignals(True)
+                    self.cmbLanguage.setCurrentIndex(idx)
+                    self.cmbLanguage.blockSignals(False)
+        except Exception as e:
+            logger.error("Error in _load_ui_preferences: %s", e, exc_info=True)
+
+    # ------------------------------------------------------------------ #
     # Theme / font handling
     # ------------------------------------------------------------------ #
     def _on_theme_changed(self, index: int) -> None:
@@ -643,10 +712,14 @@ class SettingsView(QWidget):
             theme_data = self.cmbTheme.itemData(index)
             logger.info("Theme data for index %s: %s", index, theme_data)
 
-            if theme_data == "light":
-                apply_stylesheet(app, theme="light_blue.xml")
+            theme_name = None
+            if isinstance(theme_data, str) and theme_data:
+                theme_name = theme_data
+
+            if theme_name and theme_name.endswith(".xml"):
+                apply_stylesheet(app, theme=theme_name)
             else:
-                # Default dark: restore base stylesheet from main.qss
+                # Fallback: restore stylesheet from main.qss
                 qss_text = ""
                 try:
                     qss_path = CONFIG.styles_path
@@ -655,10 +728,15 @@ class SettingsView(QWidget):
                             qss_text = fh.read()
                 except Exception as inner_exc:
                     logger.error(
-                        "Failed to read stylesheet from disk: %s", inner_exc, exc_info=True
+                        "Failed to read stylesheet from disk: %s",
+                        inner_exc,
+                        exc_info=True,
                     )
                     qss_text = ""
                 app.setStyleSheet(qss_text)
+
+            if theme_name:
+                SettingsManager.save_setting("theme", theme_name)
 
             # Re-apply font scaling on top of the theme
             self._on_font_scale_changed(self.cmbFontScale.currentIndex())
@@ -676,19 +754,24 @@ class SettingsView(QWidget):
                 )
                 return
 
-            scale = self.cmbFontScale.itemData(index)
-            if scale == "small":
+            scale_key = self.cmbFontScale.itemData(index)
+            if scale_key == "small":
                 point_size = 10
-            elif scale == "large":
+                numeric_scale = 0.9
+            elif scale_key == "large":
                 point_size = 14
+                numeric_scale = 1.1
             else:
                 point_size = 12
+                numeric_scale = 1.0
 
-            logger.info("Applying font point size: %s", point_size)
+            logger.info("Applying font point size: %s (scale=%s)", point_size, numeric_scale)
 
             font = app.font() if app.font() is not None else QFont()
             font.setPointSize(point_size)
             app.setFont(font)
+
+            SettingsManager.save_setting("font_scale", numeric_scale)
         except Exception as e:
             logger.error("Error in _on_font_scale_changed: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
@@ -724,6 +807,7 @@ class SettingsView(QWidget):
             if lang_code == getattr(self._translator, "language", None):
                 return
             self._translator.set_language(str(lang_code))
+            SettingsManager.save_setting("language", str(lang_code))
         except Exception as e:
             logger.error("Error in _on_language_selection_changed: %s", e, exc_info=True)
 

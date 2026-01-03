@@ -538,7 +538,10 @@ class ScannerDialog(QDialog):
                 self,
                 self._tr("scanner.dialog.open_title", "Select barcode image"),
                 last_dir,
-                "Images (*.png *.jpg *.jpeg *.bmp *.gif)",
+                self._tr(
+                    "scanner.dialog.file_filter",
+                    "Images (*.png *.jpg *.jpeg *.bmp *.gif)",
+                ),
             )
             if not file_path:
                 return

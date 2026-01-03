@@ -332,6 +332,8 @@ class SalesView(QWidget):
                 self.spinRedeemPoints.setMinimum(0)
                 self.spinRedeemPoints.setMaximum(0)
                 self.spinRedeemPoints.setValue(0)
+                # Give loyalty spin box enough horizontal space
+                self.spinRedeemPoints.setMinimumWidth(120)
 
             top_layout.addWidget(self.lblLoyaltyInfo)
             top_layout.addWidget(self.spinRedeemPoints)
@@ -448,6 +450,8 @@ class SalesView(QWidget):
                 self.spinDiscount.setDecimals(2)
                 self.spinDiscount.setSingleStep(1000.0)
                 self.spinDiscount.setValue(0.0)
+                # Ensure enough width for Persian numerals and controls
+                self.spinDiscount.setMinimumWidth(120)
 
             # Insert before Clear Cart / Close Shift / Checkout buttons if possible
             insert_index = max(0, bottom_layout.count() - 3)
@@ -608,7 +612,8 @@ class SalesView(QWidget):
 
             # ستون ۱: تعداد (عرض ثابت و مناسب برای SpinBox)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-            header.resizeSection(1, 80)
+            # Wider column so quantity spin boxes fit Persian numerals comfortably
+            header.resizeSection(1, 120)
 
             # ستون ۲: قیمت واحد (عرض تعاملی برای جلوگیری از کوچک شدن بیش از حد)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
@@ -1091,7 +1096,9 @@ class SalesView(QWidget):
         spin.setMinimum(1)
         spin.setMaximum(1000000)
         spin.setValue(1)
-        spin.setFixedSize(60, 35)
+        # Allow more room for Persian numerals and avoid clipping
+        spin.setMinimumWidth(120)
+        spin.setMinimumHeight(36)
         spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
         spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
         spin.setPrefix("-" if self._return_mode else "")
@@ -2325,7 +2332,9 @@ class SalesView(QWidget):
                 spin.setMinimum(1)
                 spin.setMaximum(1000000)
                 spin.setValue(int(quantity))
-                spin.setFixedSize(60, 35)
+                # Allow more room for Persian numerals and avoid clipping
+                spin.setMinimumWidth(120)
+                spin.setMinimumHeight(36)
                 spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
                 spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 spin.setPrefix("-" if self._return_mode else "")

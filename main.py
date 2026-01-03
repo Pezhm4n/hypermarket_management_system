@@ -5,6 +5,7 @@ import sys
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
+from qt_material import apply_stylesheet
 from sqlalchemy import text, inspect, Integer, Numeric
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -12,6 +13,7 @@ from app.config import CONFIG
 from app.controllers.auth_controller import AuthController
 from app.core.database_manager import DatabaseManager
 from app.core.logging_config import configure_logging
+from app.core.settings_manager import SettingsManager
 from app.core.translation_manager import TranslationManager
 from app.database import engine
 from app.models.models import Base  # importing this registers all model classes
@@ -150,16 +152,20 @@ class Application:
         # Configure logging before anything else so startup issues are captured.
         configure_logging(CONFIG.log_directory)
 
+        # Load persisted UI settings (theme / language / font scale)
+        self._settings = SettingsManager.load_settings()
+
         self.qt_app = QApplication(sys.argv)
         self.qt_app.setApplicationName(CONFIG.app_name)
         self.qt_app.setApplicationVersion(CONFIG.version)
 
+        # Apply theme and font scale based on saved settings
         self._load_stylesheet()
 
         # Internationalization
         self.translation_manager = TranslationManager(
             translations_dir=CONFIG.translations_directory,
-            default_language=CONFIG.default_language,
+            default_language=self._settings.get("language", CONFIG.default_language),
         )
         self._apply_layout_direction()
 
@@ -185,6 +191,30 @@ class Application:
     # ------------------------------------------------------------------ #
     def _load_stylesheet(self) -> None:
         """
+        Apply the saved theme (Qt Material XML or QSS fallback) and font scale.
+        """
+        try:
+            settings = getattr(self, "_settings", {}) or {}
+            theme_value = settings.get("theme", "dark_teal.xml")
+
+            if isinstance(theme_value, str) and theme_value.endswith(".xml"):
+                apply_stylesheet(self.qt_app, theme=theme_value)
+            else:
+                self._load_stylesheet_from_qss()
+
+            self._apply_font_scale_from_settings()
+        except Exception:
+            logger.exception(
+                "Failed to apply theme from settings; falling back to QSS + default font."
+            )
+            try:
+                self._load_stylesheet_from_qss()
+            except Exception:
+                # Fallback already logged
+                pass
+
+    def _load_stylesheet_from_qss(self) -> None:
+        """
         Load the global QSS stylesheet from disk.
         """
         try:
@@ -199,6 +229,32 @@ class Application:
                 )
         except Exception:
             logger.exception("Failed to load application stylesheet.")
+
+    def _apply_font_scale_from_settings(self) -> None:
+        """
+        Apply a global font size based on the persisted font_scale value.
+        """
+        try:
+            settings = getattr(self, "_settings", {}) or {}
+            raw_scale = settings.get("font_scale", 1.0)
+            try:
+                scale_value = float(raw_scale)
+            except (TypeError, ValueError):
+                scale_value = 1.0
+
+            # Map the numeric scale to one of the discrete sizes used in SettingsView.
+            if scale_value <= 0.95:
+                point_size = 10  # small
+            elif scale_value >= 1.05:
+                point_size = 14  # large
+            else:
+                point_size = 12  # medium
+
+            font = self.qt_app.font()
+            font.setPointSize(point_size)
+            self.qt_app.setFont(font)
+        except Exception:
+            logger.exception("Failed to apply font scale from settings.")
 
     def _apply_layout_direction(self) -> None:
         """
@@ -250,10 +306,14 @@ class Application:
 
     def _on_language_changed(self, language: str) -> None:
         """
-        Keep the Qt layout direction in sync with the active language.
+        Keep the Qt layout direction in sync with the active language and
+        persist the choice so it is restored on next startup.
         """
-        _ = language
         self._apply_layout_direction()
+        try:
+            SettingsManager.save_setting("language", str(language))
+        except Exception:
+            logger.exception("Failed to persist language change '%s'", language)
 
     # ------------------------------------------------------------------ #
     # Public API

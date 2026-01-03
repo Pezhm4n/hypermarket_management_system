@@ -75,14 +75,17 @@
           <property name="alignment">
            <set>Qt::AlignCenter</set>
           </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
          </widget>
         </item>
        </layout>
       </widget>
       <widget class="QWidget" name="pageInventory">
-       <layout class="QVBoxLayout" name="verticalLayout_inventory">
-        <item>
-         <widget class="QLabel" name="lblInventory">
+      <<layout class="QVBoxLayout" name="verticalLayout_inventory">
+       <<item>
+        <<widget class="QLabel" name="lblInventory">
           <property name="text">
            <string>Inventory Module (placeholder)</string>
           </property>
@@ -103,15 +106,18 @@
           <property name="alignment">
            <set>Qt::AlignCenter</set>
           </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
          </widget>
         </item>
        </layout>
       </widget>
       <widget class="QWidget" name="pageUsers">
-       <layout class="QVBoxLayout" name="verticalLayout_users">
-        <item>
-         <widget class="QLabel" name="lblUsers">
-          <property name="text">
+      <<layout class="QVBoxLayout" name="verticalLayout_users">
+       <<item>
+        <<widget class="QLabel" name="lblUsers">
+         <<property name="text">
            <string>Users Module (placeholder)</string>
           </property>
           <property name="alignment">

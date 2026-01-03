@@ -17,6 +17,9 @@
      <property name="styleSheet">
       <string notr="true">font-size: 18pt; font-weight: bold;</string>
      </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
     </widget>
    </item>
    <item>
