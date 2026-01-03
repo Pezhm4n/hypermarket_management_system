@@ -400,5 +400,11 @@
   "customers.edit.field.mobile": "Mobile:",
   "customers.edit.field.subscription": "Subscription Code:",
   "customers.edit.error.name_or_mobile_required": "At least one of name or mobile must be provided.",
-  "customers.edit.error.not_found": "Customer not found."
+  "customers.edit.error.not_found": "Customer not found.",
+
+  "sales.dialog.parked_orders.title": "Parked Orders",
+  "sales.dialog.parked_orders.column.id": "ID",
+  "sales.dialog.parked_orders.column.customer": "Customer",
+  "sales.dialog.parked_orders.column.time": "Time",
+  "sales.dialog.parked_orders.column.total": "Total"
 }

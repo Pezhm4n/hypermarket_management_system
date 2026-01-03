@@ -263,12 +263,17 @@ class SalesView(QWidget):
             if self.lblCustomer is None:
                 self.lblCustomer = QLabel(self)
                 self.lblCustomer.setObjectName("lblSelectedCustomer")
-                self.lblCustomer.setText("مشتری: -")
+                # اصلاح شده: استفاده از کلید ترجمه برای کلمه "مشتری"
+                prefix = self._translator.get("sales.customer.label", "Customer: ")
+                self.lblCustomer.setText(f"{prefix}-")
 
             if self.btnSelectCustomer is None:
                 self.btnSelectCustomer = QPushButton(self)
                 self.btnSelectCustomer.setObjectName("btnSelectCustomer")
-                self.btnSelectCustomer.setText("انتخاب مشتری")
+                # اصلاح شده: استفاده از کلید ترجمه برای دکمه انتخاب مشتری
+                self.btnSelectCustomer.setText(
+                    self._translator.get("sales.button.select_customer", "Select Customer")
+                )
 
             top_layout = getattr(self, "horizontalLayout_top", None)
             if top_layout is not None:
@@ -318,7 +323,12 @@ class SalesView(QWidget):
             if self.chkReturnMode is None:
                 self.chkReturnMode = QCheckBox(self)
                 self.chkReturnMode.setObjectName("chkReturnMode")
-                self.chkReturnMode.setText("حالت مرجوعی")
+                
+                # --- اصلاح شده: استفاده از کلید ترجمه ---
+                self.chkReturnMode.setText(
+                    self._translator.get("sales.mode.return", "Return Mode")
+                )
+                # ------------------------------------
 
             top_layout = getattr(self, "horizontalLayout_top", None)
             if top_layout is not None:
@@ -327,6 +337,7 @@ class SalesView(QWidget):
                 self.chkReturnMode.setParent(self)
         except Exception as e:
             logger.error("Error in _inject_return_mode_toggle: %s", e, exc_info=True)
+
 
     def _inject_returns_button(self) -> None:
         """
@@ -534,49 +545,62 @@ class SalesView(QWidget):
         ]
         self.tblCart.setColumnCount(len(headers))
         self.tblCart.setHorizontalHeaderLabels(headers)
-
+        
         self.tblCart.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
         self.tblCart.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection
         )
+        
         # Allow editing where item flags permit (quantity column)
         self.tblCart.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.SelectedClicked
         )
-
+        
         # Enable context menu on cart table
         self.tblCart.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu
         )
+        
+        # جلوگیری از اتصال چندباره سیگنال در صورت فراخوانی مجدد تابع
+        try:
+            self.tblCart.customContextMenuRequested.disconnect()
+        except:
+            pass
         self.tblCart.customContextMenuRequested.connect(
             self._on_cart_context_menu
         )
-
+        
         if self.tblCart.verticalHeader() is not None:
             self.tblCart.verticalHeader().setVisible(False)
-            # Increase default row height so embedded widgets (spinboxes, buttons)
-            # are fully visible and not clipped.
             self.tblCart.verticalHeader().setDefaultSectionSize(45)
 
         header = self.tblCart.horizontalHeader()
         if header is not None:
             from PyQt6.QtWidgets import QHeaderView
-
             header.setStretchLastSection(False)
-            # Name column stretches
+
+            # ستون ۰: نام کالا (باقی‌مانده فضا را پر می‌کند)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            # Quantity column fixed
+
+            # ستون ۱: تعداد (عرض ثابت و مناسب برای SpinBox)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-            header.resizeSection(1, 70)
-            # Price and Row Total auto
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-            # Delete column fixed and narrow
+            header.resizeSection(1, 80)
+
+            # ستون ۲: قیمت واحد (عرض تعاملی برای جلوگیری از کوچک شدن بیش از حد)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+            header.resizeSection(2, 120)
+
+            # ستون ۳: جمع ردیف (عرض تعاملی و کمی بیشتر برای اعداد بزرگتر)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+            header.resizeSection(3, 140)
+
+            # ستون ۴: دکمه حذف (عرض ثابت و کوچک)
             header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-            header.resizeSection(4, 40)
+            header.resizeSection(4, 60)
+
 
     def _setup_shortcuts(self) -> None:
         # Allow deleting the selected cart row with the Delete key
@@ -1149,17 +1173,25 @@ class SalesView(QWidget):
             index = self.tblCart.indexAt(pos)
             if not index.isValid():
                 return
-
+            
             row = index.row()
             if row < 0:
                 return
-
+            
             menu = QMenu(self)
-            action_delete = menu.addAction("حذف کالا")
-            action_set_qty = menu.addAction("تغییر تعداد")
+            
+            # --- اصلاح شده ---
+            action_delete = menu.addAction(
+                self._translator.get("inventory.context.delete_product", "Delete Item")
+            )
+            action_set_qty = menu.addAction(
+                self._translator.get("sales.table.column.quantity", "Change Quantity")
+            )
+            # ----------------
 
             global_pos = self.tblCart.viewport().mapToGlobal(pos)
             chosen_action = menu.exec(global_pos)
+            
             if chosen_action is None:
                 return
 
@@ -1171,6 +1203,7 @@ class SalesView(QWidget):
                     spin.setFocus()
         except Exception as e:
             logger.error("Error in _on_cart_context_menu: %s", e, exc_info=True)
+
 
     def _collect_cart_items(self) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
@@ -1350,63 +1383,35 @@ class SalesView(QWidget):
         self.lblTotalAmount.setText(total_text)
 
     def _prompt_start_shift(self) -> Optional[Decimal]:
+        """
+        Shows a properly translated dialog to get the initial cash float.
+        """
         try:
-            while True:
-                dialog = QDialog(self)
-                dialog.setWindowTitle("Start Shift")
+            # استفاده از کلاس StartShiftDialog که از قبل برای ترجمه طراحی شده است
+            dialog = StartShiftDialog(
+                translation_manager=self._translator, 
+                parent=self
+            )
 
-                layout = QVBoxLayout(dialog)
+            # بررسی جهت‌گیری RTL برای دیالوگ
+            if getattr(self._translator, "language", "en") == "fa":
+                dialog.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+            
+            result = dialog.exec()
+            
+            if result == QDialog.DialogCode.Accepted:
+                # دریافت مبلغ وارد شده از دیالوگ
+                cash_float = dialog.cash_float()
+                logger.info("User entered cash float amount: %s", cash_float)
+                return cash_float
+            else:
+                # اگر کاربر دیالوگ را ببندد
+                logger.info("User cancelled start shift dialog.")
+                return None
 
-                label_title = QLabel("Start a new shift?", dialog)
-                layout.addWidget(label_title)
-
-                label_cash = QLabel("Cash Float (Mojoodee Avaliyeh):", dialog)
-                layout.addWidget(label_cash)
-
-                txt_cash = QLineEdit(dialog)
-                txt_cash.setText("0")
-                layout.addWidget(txt_cash)
-
-                button_box = QDialogButtonBox(
-                    QDialogButtonBox.StandardButton.Ok
-                    | QDialogButtonBox.StandardButton.Cancel,
-                    parent=dialog,
-                )
-                layout.addWidget(button_box)
-
-                button_box.accepted.connect(dialog.accept)
-                button_box.rejected.connect(dialog.reject)
-
-                result = dialog.exec()
-                if result != QDialog.DialogCode.Accepted:
-                    logger.info("User cancelled start shift dialog.")
-                    return None
-
-                raw = txt_cash.text().strip()
-                try:
-                    amount = Decimal(raw or "0")
-                except Exception:
-                    QMessageBox.warning(
-                        self,
-                        "Invalid amount",
-                        "Please enter a valid cash float amount.",
-                    )
-                    continue
-
-                if amount < 0:
-                    QMessageBox.warning(
-                        self,
-                        "Invalid amount",
-                        "Cash float cannot be negative.",
-                    )
-                    continue
-
-                amount = amount.quantize(Decimal("0.01"))
-                logger.info("User entered cash float amount: %s", amount)
-                return amount
         except Exception as e:
             logger.error("Error in _prompt_start_shift: %s", e, exc_info=True)
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, self._translator.get("dialog.error_title", "Error"), str(e))
             return None
 
     def ensure_active_shift(self) -> None:
@@ -1494,16 +1499,22 @@ class SalesView(QWidget):
             raw_barcode = self.txtBarcode.text()
             barcode = raw_barcode.strip() if raw_barcode is not None else ""
             logger.info("Barcode entered: %s", barcode)
-
+            
             if not barcode:
                 return
 
             product = self._controller.get_product_details(barcode)
             self.txtBarcode.clear()
-
+            
             if product is None:
                 logger.warning("No product found for barcode '%s'.", barcode)
-                QMessageBox.warning(self, "خطا", "کالا یافت نشد")
+                # --- اصلاح شده ---
+                QMessageBox.warning(
+                    self,
+                    self._translator["dialog.warning_title"],
+                    self._translator["sales.error.not_found"].format(barcode=barcode),
+                )
+                # ----------------
                 return
 
             total_stock = product.get("TotalStock")
@@ -1511,8 +1522,7 @@ class SalesView(QWidget):
                 total_stock_dec = Decimal(str(total_stock))
             except Exception:
                 total_stock_dec = Decimal("0")
-
-            # In normal sale mode, enforce stock check. In return mode, we allow adding regardless of stock.
+            
             if not self._return_mode and total_stock_dec <= 0:
                 logger.warning(
                     "Product out of stock: ProdID=%s, Name='%s', Barcode='%s'",
@@ -1535,6 +1545,7 @@ class SalesView(QWidget):
             logger.error("Error in _on_barcode_entered: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
             self.txtBarcode.clear()
+
 
     def _on_checkout_clicked(self) -> None:
         try:

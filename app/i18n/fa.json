@@ -47,6 +47,7 @@
   "sales.table.column.quantity": "تعداد",
   "sales.table.column.price": "قیمت",
   "sales.table.column.row_total": "جمع ردیف",
+  "sales.table.column.delete": "حذف",
   "sales.error.lookup": "خطا در جستجوی کالا.\n{details}",
   "sales.error.not_found": "هیچ کالایی با بارکد '{barcode}' یافت نشد.",
   "sales.error.out_of_stock": "کالای '{name}' موجود نیست.",
@@ -404,5 +405,11 @@
 
   "dialog.button.ok": "تأیید",
   "dialog.button.cancel": "انصراف",
-  "dialog.button.select": "انتخاب"
+  "dialog.button.select": "انتخاب",
+
+  "sales.dialog.parked_orders.title": "فاکتورهای معلق",
+  "sales.dialog.parked_orders.column.id": "شناسه",
+  "sales.dialog.parked_orders.column.customer": "مشتری",
+  "sales.dialog.parked_orders.column.time": "زمان",
+  "sales.dialog.parked_orders.column.total": "مبلغ کل"
 }
