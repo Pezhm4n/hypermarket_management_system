@@ -50,11 +50,9 @@ logger = logging.getLogger(__name__)
 class StartShiftDialog(QDialog):
     """
     Dialog for starting a new shift with an initial cash float.
-
     The dialog is fully localized using TranslationManager and performs
     basic validation on the entered cash amount.
     """
-
     def __init__(
         self,
         translation_manager: TranslationManager,
@@ -65,20 +63,26 @@ class StartShiftDialog(QDialog):
         self._cash_float = Decimal("0")
         try:
             self._build_ui()
+            self._apply_translations()  # فراخوانی تابع ترجمه برای دکمه‌ها و متون
         except Exception as e:
             logger.error("Error initializing StartShiftDialog: %s", e, exc_info=True)
 
     def _build_ui(self) -> None:
         try:
-            self.setWindowTitle(self._translator["shift.start_title"])
+            # اعمال جهت چیدمان (RTL برای فارسی و LTR برای انگلیسی)
+            if getattr(self._translator, "language", "en") == "fa":
+                self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+            else:
+                self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
 
             layout = QVBoxLayout(self)
             layout.setContentsMargins(16, 16, 16, 16)
             layout.setSpacing(12)
 
-            description = QLabel(self._translator["shift.start_message"], self)
-            description.setWordWrap(True)
-            layout.addWidget(description)
+            # استفاده از self برای لیبل‌ها تا در تابع ترجمه قابل دسترسی باشند
+            self.lblDescription = QLabel(self)
+            self.lblDescription.setWordWrap(True)
+            layout.addWidget(self.lblDescription)
 
             form_layout = QFormLayout()
             form_layout.setContentsMargins(0, 0, 0, 0)
@@ -86,42 +90,61 @@ class StartShiftDialog(QDialog):
 
             self.txt_cash_float = QLineEdit(self)
             self.txt_cash_float.setText("0")
-            # Apply numeric validator to prevent non-numeric input
+
+            # ولیدیتور برای جلوگیری از ورود حروف
             validator = QDoubleValidator(self)
             validator.setBottom(0.0)
             self.txt_cash_float.setValidator(validator)
-            try:
-                self.txt_cash_float.setPlaceholderText(
-                    self._translator["shift.cash_float_placeholder"]
-                )
-            except Exception:
-                # If translation key is missing, ignore placeholder configuration.
-                pass
 
-            form_layout.addRow(
-                self._translator["shift.cash_float_label"],
-                self.txt_cash_float,
-            )
+            self.lblCashField = QLabel(self)
+            form_layout.addRow(self.lblCashField, self.txt_cash_float)
             layout.addLayout(form_layout)
 
-            button_box = QDialogButtonBox(
+            # تبدیل به self.button_box برای دسترسی در ترجمه
+            self.button_box = QDialogButtonBox(
                 QDialogButtonBox.StandardButton.Ok
                 | QDialogButtonBox.StandardButton.Cancel,
                 parent=self,
             )
-            layout.addWidget(button_box)
+            layout.addWidget(self.button_box)
 
-            button_box.accepted.connect(self._on_accept)
-            button_box.rejected.connect(self.reject)
+            self.button_box.accepted.connect(self._on_accept)
+            self.button_box.rejected.connect(self.reject)
         except Exception as e:
             logger.error("Error building StartShiftDialog UI: %s", e, exc_info=True)
 
+    def _apply_translations(self) -> None:
+        """اعمال متون ترجمه شده به تمامی اجزای دیالوگ"""
+        try:
+            self.setWindowTitle(self._translator["shift.start_title"])
+            self.lblDescription.setText(self._translator["shift.start_message"])
+            self.lblCashField.setText(self._translator["shift.cash_float_label"])
+            
+            self.txt_cash_float.setPlaceholderText(
+                self._translator.get("shift.cash_float_placeholder", "")
+            )
+
+            # ترجمه دکمه‌های OK و Cancel
+            btn_ok = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
+            if btn_ok:
+                btn_ok.setText(self._translator.get("dialog.button.ok", "OK"))
+            
+            btn_cancel = self.button_box.button(QDialogButtonBox.StandardButton.Cancel)
+            if btn_cancel:
+                btn_cancel.setText(self._translator.get("dialog.button.cancel", "Cancel"))
+        except Exception as e:
+            logger.error("Error applying translations in StartShiftDialog: %s", e)
+
     def _on_accept(self) -> None:
+        """
+        منطق تایید و ولیدیشن (دقیقاً طبق خواسته شما و منطق قبلی)
+        """
         try:
             raw = (self.txt_cash_float.text() or "").strip()
             if not raw:
                 raw = "0"
             try:
+                # تبدیل متن به عدد (ولیدیشن ۱)
                 amount = Decimal(raw)
             except Exception:
                 QMessageBox.warning(
@@ -131,6 +154,7 @@ class StartShiftDialog(QDialog):
                 )
                 return
 
+            # بررسی منفی نبودن (ولیدیشن ۲)
             if amount < 0:
                 QMessageBox.warning(
                     self,
@@ -139,14 +163,11 @@ class StartShiftDialog(QDialog):
                 )
                 return
 
+            # اگر همه چیز درست بود
             self._cash_float = amount.quantize(Decimal("0.01"))
             self.accept()
         except Exception as e:
-            logger.error(
-                "Error validating cash float in StartShiftDialog: %s",
-                e,
-                exc_info=True,
-            )
+            logger.error("Error validating cash float: %s", e, exc_info=True)
             QMessageBox.warning(
                 self,
                 self._translator["dialog.warning_title"],
@@ -599,7 +620,7 @@ class SalesView(QWidget):
 
             # ستون ۴: دکمه حذف (عرض ثابت و کوچک)
             header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-            header.resizeSection(4, 60)
+            header.resizeSection(4, 80)
 
 
     def _setup_shortcuts(self) -> None:
