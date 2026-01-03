@@ -1964,7 +1964,9 @@ class ExpiryReportDialog(QDialog):
         self.spinDays = QSpinBox(self)
         self.spinDays.setRange(1, 365)
         self.spinDays.setValue(30)
-        self.spinDays.setSuffix(" days")
+        self.spinDays.setSuffix(
+            self._translator.get("inventory.expiry_report.field.days_suffix", " days")
+        )
         filter_layout.addWidget(self.spinDays)
 
         self.btnRefresh = QPushButton(self)

@@ -406,5 +406,78 @@
   "sales.dialog.parked_orders.column.id": "ID",
   "sales.dialog.parked_orders.column.customer": "Customer",
   "sales.dialog.parked_orders.column.time": "Time",
-  "sales.dialog.parked_orders.column.total": "Total"
+  "sales.dialog.parked_orders.column.total": "Total",
+
+  "inventory.button.import_excel": "Import from Excel",
+  "excel.dialog.select_file": "Select Excel File",
+  "excel.success_msg": "{count} products imported successfully.",
+  "excel.error_log": "Errors:",
+
+  "inventory.button.expiry_report": "Expiry Report",
+  "inventory.button.inventory_report": "Inventory Report",
+
+  "inventory.context.generate_barcode": "Generate Barcode",
+
+  "inventory.dialog.button.lookup_online": "Search product details online",
+  "inventory.dialog.button.lookup_price_torob": "Open Torob search for price",
+  "inventory.lookup.dialog.title": "IranCode Lookup",
+  "inventory.dialog.placeholder.searching_name": "Searching for product name...",
+  "inventory.lookup.status.starting": "Starting online lookup...",
+  "inventory.lookup.info.not_found": "No product information found online. Please enter details manually.",
+
+  "inventory.dialog.error.no_barcode_for_product": "This product does not have a barcode or ID.",
+  "inventory.dialog.info.barcode_saved": "Barcode image saved at: {path}",
+  "inventory.dialog.error.barcode_generate_failed": "Failed to generate barcode: {details}",
+
+  "inventory.expiry_report.dialog.title": "Products Near Expiry Report",
+  "inventory.expiry_report.field.days": "Show products expiring within:",
+  "inventory.expiry_report.button.refresh": "Refresh",
+  "inventory.expiry_report.button.export_pdf": "Export PDF",
+  "inventory.expiry_report.table.column.name": "Product Name",
+  "inventory.expiry_report.table.column.barcode": "Barcode",
+  "inventory.expiry_report.table.column.batch": "Batch",
+  "inventory.expiry_report.table.column.quantity": "Quantity",
+  "inventory.expiry_report.table.column.expiry": "Expiry Date",
+  "inventory.expiry_report.table.column.days_left": "Days Left",
+  "inventory.expiry_report.info.no_data": "No products found with this filter.",
+
+  "inventory.inventory_report.dialog.title": "Inventory Stock Report",
+  "inventory.inventory_report.button.export_pdf": "Export PDF",
+  "inventory.inventory_report.button.export_excel": "Export Excel",
+  "inventory.inventory_report.label.total_value": "Total Inventory Value: {value} Rials",
+  "inventory.inventory_report.info.exported": "Report saved successfully.",
+  "inventory.table.column.unit": "Unit",
+  "inventory.table.column.avg_buy_price": "Avg Buy Price",
+  "inventory.table.column.value": "Total Value",
+
+  "inventory.restock.field.quantity": "Quantity",
+  "inventory.restock.field.buy_price": "Purchase Price",
+  "inventory.restock.field.expiry_date": "Expiry Date",
+  
+  "inventory.dialog.error.invalid_quantity": "Quantity must be greater than zero.",
+  "excel.dialog.file_filter": "Excel Files (*.xlsx *.xls)",
+  "excel.error.read_failed": "Failed to read Excel file: {error}",
+  "excel.error.no_file_selected": "No file selected.",
+
+  "inventory.expiry_report.pdf.title": "Products Near Expiry Report",
+  "inventory.expiry_report.pdf.date": "Report Date: {date}",
+  "inventory.expiry_report.pdf.filter": "Filter: Products under {days} days",
+  "inventory.expiry_report.info.exported": "Report saved successfully.",
+
+  
+  "inventory.inventory_report.pdf.title": "Inventory Stock Report",
+  "inventory.inventory_report.pdf.date": "Report Date: {date}",
+  "inventory.inventory_report.pdf.total_items": "Total Items: {count}",
+  "inventory.inventory_report.pdf.total_value": "Total Inventory Value: {value} Rials",
+  "inventory.inventory_report.pdf.table.total_label": "Total",
+  
+  "inventory.inventory_report.csv.header.name": "Product Name",
+  "inventory.inventory_report.csv.header.barcode": "Barcode",
+  "inventory.inventory_report.csv.header.category": "Category",
+  "inventory.inventory_report.csv.header.unit": "Unit",
+  "inventory.inventory_report.csv.header.quantity": "Quantity",
+  "inventory.inventory_report.csv.header.avg_price": "Avg Buy Price",
+  "inventory.inventory_report.csv.header.value": "Total Value",
+  "inventory.inventory_report.csv.total_label": "Total:",
+  "inventory.inventory_report.error.no_data": "No data to export."
 }

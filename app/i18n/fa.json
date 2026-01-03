@@ -411,5 +411,75 @@
   "sales.dialog.parked_orders.column.id": "شناسه",
   "sales.dialog.parked_orders.column.customer": "مشتری",
   "sales.dialog.parked_orders.column.time": "زمان",
-  "sales.dialog.parked_orders.column.total": "مبلغ کل"
+  "sales.dialog.parked_orders.column.total": "مبلغ کل",
+
+    "excel.dialog.select_file": "انتخاب فایل اکسل",
+  "excel.success_msg": "تعداد {count} کالا با موفقیت وارد شد.",
+  "excel.error_log": "خطاها:",
+
+  "inventory.context.generate_barcode": "تولید بارکد",
+
+  "inventory.dialog.button.lookup_online": "جستجوی اطلاعات آنلاین",
+  "inventory.dialog.button.lookup_price_torob": "جستجوی قیمت در ترب",
+
+  "inventory.lookup.dialog.title": "استعلام ایران‌کد",
+  "inventory.dialog.placeholder.searching_name": "در حال جستجوی نام کالا...",
+  "inventory.lookup.status.starting": "شروع جستجوی آنلاین...",
+  "inventory.lookup.info.not_found": "اطلاعاتی برای این بارکد یافت نشد. لطفاً اطلاعات را به صورت دستی وارد کنید.",
+
+  "inventory.dialog.error.no_barcode_for_product": "این محصول بارکد یا شناسه‌ای ندارد.",
+  "inventory.dialog.info.barcode_saved": "تصویر بارکد در مسیر زیر ذخیره شد: {path}",
+  "inventory.dialog.error.barcode_generate_failed": "خطا در تولید بارکد: {details}",
+
+  "inventory.expiry_report.dialog.title": "گزارش کالاهای نزدیک به انقضا",
+  "inventory.expiry_report.field.days": "نمایش کالاهای منقضی‌شده تا:",
+  "inventory.expiry_report.button.refresh": "بروزرسانی",
+  "inventory.expiry_report.button.export_pdf": "خروجی PDF",
+  "inventory.expiry_report.table.column.name": "نام کالا",
+  "inventory.expiry_report.table.column.barcode": "بارکد",
+  "inventory.expiry_report.table.column.batch": "بچ",
+  "inventory.expiry_report.table.column.quantity": "موجودی",
+  "inventory.expiry_report.table.column.expiry": "تاریخ انقضا",
+  "inventory.expiry_report.table.column.days_left": "روز مانده",
+  "inventory.expiry_report.info.no_data": "کالایی با این فیلتر یافت نشد.",
+
+  "inventory.inventory_report.dialog.title": "گزارش موجودی انبار",
+  "inventory.inventory_report.button.export_pdf": "خروجی PDF",
+  "inventory.inventory_report.button.export_excel": "خروجی Excel",
+  "inventory.inventory_report.label.total_value": "ارزش کل موجودی: {value} ریال",
+  "inventory.inventory_report.info.exported": "گزارش با موفقیت ذخیره شد.",
+  "inventory.table.column.unit": "واحد",
+  "inventory.table.column.avg_buy_price": "میانگین قیمت خرید",
+  "inventory.table.column.value": "ارزش کل",
+
+  "inventory.button.import_excel": "ورود از اکسل",
+  "inventory.button.expiry_report": "گزارش انقضا",
+  "inventory.button.inventory_report": "گزارش موجودی انبار",
+
+  "excel.dialog.file_filter": "فایل‌های اکسل (*.xlsx *.xls)",
+  "excel.error.read_failed": "خطا در خواندن فایل اکسل: {error}",
+  "excel.error.no_file_selected": "هیچ فایلی انتخاب نشد.",
+
+
+  "inventory.expiry_report.pdf.title": "گزارش کالاهای نزدیک به انقضا",
+  "inventory.expiry_report.pdf.date": "تاریخ گزارش: {date}",
+  "inventory.expiry_report.pdf.filter": "فیلتر: کالاهای زیر {days} روز",
+  "inventory.expiry_report.info.exported": "گزارش با موفقیت ذخیره شد.",
+  
+  "inventory.inventory_report.pdf.title": "گزارش موجودی کل انبار",
+  "inventory.inventory_report.pdf.date": "تاریخ گزارش: {date}",
+  "inventory.inventory_report.pdf.total_items": "تعداد کل اقلام: {count}",
+  "inventory.inventory_report.pdf.total_value": "ارزش کل انبار: {value} ریال",
+  "inventory.inventory_report.pdf.table.total_label": "جمع کل",
+  
+  "inventory.inventory_report.csv.header.name": "نام کالا",
+  "inventory.inventory_report.csv.header.barcode": "بارکد",
+  "inventory.inventory_report.csv.header.category": "دسته‌بندی",
+  "inventory.inventory_report.csv.header.unit": "واحد",
+  "inventory.inventory_report.csv.header.quantity": "موجودی",
+  "inventory.inventory_report.csv.header.avg_price": "میانگین قیمت خرید",
+  "inventory.inventory_report.csv.header.value": "ارزش کل",
+  "inventory.inventory_report.csv.total_label": "جمع کل:",
+  
+  "inventory.inventory_report.error.no_data": "داده‌ای برای خروجی گرفتن وجود ندارد."
 }
