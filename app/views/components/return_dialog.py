@@ -73,8 +73,14 @@ class ReturnDialog(QDialog):
     def _build_ui(self) -> None:
         self.setModal(True)
         self.setMinimumSize(720, 520)
-        self.setWindowTitle(self._tr("return.dialog.title", "Returns / Refund"))
 
+        # تنظیم جهت صفحه (RTL/LTR)
+        if self._translator and getattr(self._translator, "language", "en") == "fa":
+            self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        else:
+            self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+
+        self.setWindowTitle(self._tr("return.dialog.title", "Returns / Refund"))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(8)
@@ -82,19 +88,15 @@ class ReturnDialog(QDialog):
         # Invoice selection row
         select_row = QHBoxLayout()
         select_row.setSpacing(8)
-
         self.lblInvoicePrompt = QLabel(self)
         self.txtInvoiceId = QLineEdit(self)
         self.txtInvoiceId.setObjectName("txtInvoiceId")
         self.txtInvoiceId.setValidator(QIntValidator(1, 10_000_000, self))
-
         self.btnLoadInvoice = QPushButton(self)
         self.btnLoadInvoice.setObjectName("btnLoadInvoice")
-
         select_row.addWidget(self.lblInvoicePrompt)
         select_row.addWidget(self.txtInvoiceId)
         select_row.addWidget(self.btnLoadInvoice)
-
         layout.addLayout(select_row)
 
         # Invoice summary
@@ -113,7 +115,6 @@ class ReturnDialog(QDialog):
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.SelectedClicked
         )
-
         header = self.tblItems.horizontalHeader()
         if header is not None:
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -121,7 +122,6 @@ class ReturnDialog(QDialog):
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-
         layout.addWidget(self.tblItems)
 
         # Refund summary
@@ -133,16 +133,19 @@ class ReturnDialog(QDialog):
         layout.addLayout(summary_row)
 
         # Dialog buttons
-        button_box = QDialogButtonBox(
+        # --- تغییر مهم: استفاده از self.button_box ---
+        # این تغییر باعث می‌شود بتوانیم در تابع ترجمه به دکمه‌ها دسترسی داشته باشیم
+        self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             parent=self,
         )
-        layout.addWidget(button_box)
+        layout.addWidget(self.button_box)
 
         # Wire signals
         self.btnLoadInvoice.clicked.connect(self._on_load_invoice_clicked)
-        button_box.accepted.connect(self._on_confirm_clicked)
-        button_box.rejected.connect(self.reject)
+        # اتصال سیگنال‌ها با استفاده از self.button_box
+        self.button_box.accepted.connect(self._on_confirm_clicked)
+        self.button_box.rejected.connect(self.reject)
 
     def _apply_translations(self) -> None:
         try:
@@ -160,6 +163,20 @@ class ReturnDialog(QDialog):
                 self._tr("return.table.header.reason", "Reason"),
             ]
             self.tblItems.setHorizontalHeaderLabels(headers)
+            
+            # --- ترجمه دکمه‌های استاندارد ---
+            # بررسی می‌کنیم که button_box وجود داشته باشد
+            if hasattr(self, "button_box"):
+                # دریافت دکمه OK و تغییر متن آن
+                btn_ok = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
+                if btn_ok:
+                    btn_ok.setText(self._tr("dialog.button.ok", "OK"))
+                
+                # دریافت دکمه Cancel و تغییر متن آن
+                btn_cancel = self.button_box.button(QDialogButtonBox.StandardButton.Cancel)
+                if btn_cancel:
+                    btn_cancel.setText(self._tr("dialog.button.cancel", "Cancel"))
+            # -----------------------------
 
             self._update_invoice_summary()
             self._update_refund_label()

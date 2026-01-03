@@ -400,5 +400,9 @@
   "scanner.dialog.open_title": "انتخاب تصویر بارکد",
   "scanner.info.no_barcode": "هیچ بارکدی در تصویر انتخاب شده یافت نشد.",
   "scanner.camera_type.droidcam": "دراید‌کم",
-  "scanner.camera_type.webcam": "وب‌کم"
+  "scanner.camera_type.webcam": "وب‌کم",
+
+  "dialog.button.ok": "تأیید",
+  "dialog.button.cancel": "انصراف",
+  "dialog.button.select": "انتخاب"
 }

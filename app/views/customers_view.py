@@ -55,6 +55,11 @@ class CustomersDialog(QDialog):
         self.setModal(True)
         self.setMinimumSize(640, 420)
 
+        if getattr(self._translator, "language", "en") == "fa":
+            self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        else:
+            self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
@@ -94,15 +99,15 @@ class CustomersDialog(QDialog):
             self.tblCustomers.verticalHeader().setVisible(False)
         layout.addWidget(self.tblCustomers)
 
-        button_box = QDialogButtonBox(
+        self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel,
             parent=self,
         )
-        layout.addWidget(button_box)
+        layout.addWidget(self.button_box)
 
-        button_box.accepted.connect(self._on_accept)
-        button_box.rejected.connect(self.reject)
+        self.button_box.accepted.connect(self._on_accept)
+        self.button_box.rejected.connect(self.reject)
 
     def _connect_signals(self) -> None:
         self.txtSearch.textChanged.connect(self._on_search_changed)
@@ -128,7 +133,7 @@ class CustomersDialog(QDialog):
         self.btnAdd.setText(self._translator.get("customers.button.add", "Add"))
         self.btnEdit.setText(self._translator.get("customers.button.edit", "Edit"))
         self.btnDelete.setText(self._translator.get("customers.button.delete", "Delete"))
-
+        
         headers = [
             self._translator.get("customers.table.column.id", "ID"),
             self._translator.get("customers.table.column.name", "Name"),
@@ -136,6 +141,17 @@ class CustomersDialog(QDialog):
             self._translator.get("customers.table.column.subscription", "Subscription Code"),
         ]
         self.tblCustomers.setHorizontalHeaderLabels(headers)
+
+        # --- بخش جدید برای ترجمه دکمه‌های OK و Cancel ---
+        if hasattr(self, "button_box"):
+            btn_ok = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
+            if btn_ok:
+                # اگر این دیالوگ برای انتخاب است، بهتر است "انتخاب" باشد، در غیر این صورت "تأیید"
+                btn_ok.setText(self._translator.get("dialog.button.select", "Select"))
+            
+            btn_cancel = self.button_box.button(QDialogButtonBox.StandardButton.Cancel)
+            if btn_cancel:
+                btn_cancel.setText(self._translator.get("dialog.button.cancel", "Cancel"))
 
     # ------------------------------------------------------------------ #
     # Data helpers
@@ -265,7 +281,11 @@ class CustomersDialog(QDialog):
     def _on_accept(self) -> None:
         data = self._get_selected_row_data()
         if data is None:
-            QMessageBox.information(self, "اطلاعات", "لطفاً یک مشتری را انتخاب کنید.")
+            QMessageBox.information(
+                self, 
+                self._translator.get("dialog.info_title", "Information"), 
+                self._translator.get("customers.dialog.info.select_customer", "Please select a customer.")
+            )
             return
         self._selected_customer = data
         self.accept()
@@ -318,6 +338,12 @@ class CustomerEditDialog(QDialog):
 
     def _build_ui(self) -> None:
         self.setModal(True)
+
+        if getattr(self._translator, "language", "en") == "fa":
+            self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        else:
+            self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
@@ -342,15 +368,15 @@ class CustomerEditDialog(QDialog):
         form_layout.addWidget(self.txtSubscription)
         layout.addLayout(form_layout)
 
-        button_box = QDialogButtonBox(
+        self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel,
             parent=self,
         )
-        layout.addWidget(button_box)
-
-        button_box.accepted.connect(self._on_save_clicked)
-        button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+        
+        self.button_box.accepted.connect(self._on_save_clicked)
+        self.button_box.rejected.connect(self.reject)
 
     def _apply_translations(self) -> None:
         if self._customer_id is None:
@@ -371,7 +397,6 @@ class CustomerEditDialog(QDialog):
                     "customers.edit.edit_subtitle", "Edit customer details"
                 )
             )
-
         self.lblName.setText(
             self._translator.get("customers.edit.field.name", "Full Name:")
         )
@@ -384,6 +409,19 @@ class CustomerEditDialog(QDialog):
             )
         )
 
+        # --- بخش جدید برای ترجمه دکمه‌های Save و Cancel ---
+        if hasattr(self, "button_box"):
+            btn_save = self.button_box.button(QDialogButtonBox.StandardButton.Save)
+            if btn_save:
+                # استفاده از کلید عمومی ذخیره
+                btn_save.setText(self._translator.get("inventory.dialog.button.save", "Save"))
+            
+            btn_cancel = self.button_box.button(QDialogButtonBox.StandardButton.Cancel)
+            if btn_cancel:
+                # استفاده از کلید عمومی انصراف
+                btn_cancel.setText(self._translator.get("inventory.dialog.button.cancel", "Cancel"))
+    
+    
     def _load_customer(self) -> None:
         with self._get_session() as session:
             customer = session.get(Customer, self._customer_id)

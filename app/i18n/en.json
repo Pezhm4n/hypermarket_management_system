@@ -373,6 +373,32 @@
   "scanner.dialog.open_title": "Select barcode image",
   "scanner.info.no_barcode": "No barcode could be detected in the selected image.",
   "scanner.camera_type.droidcam": "DroidCam",
-  "scanner.camera_type.webcam": "Webcam"
+  "scanner.camera_type.webcam": "Webcam",
 
+  "dialog.button.ok": "OK",
+  "dialog.button.cancel": "Cancel",
+  "dialog.button.select": "Select",
+
+  "customers.dialog.title": "Customers",
+  "customers.dialog.subtitle": "Manage and select customers",
+  "customers.search_placeholder": "Search by customer name or mobile...",
+  "customers.button.add": "Add",
+  "customers.button.edit": "Edit",
+  "customers.button.delete": "Delete",
+  "customers.table.column.id": "ID",
+  "customers.table.column.name": "Name",
+  "customers.table.column.mobile": "Mobile",
+  "customers.table.column.subscription": "Subscription Code",
+  "customers.dialog.info.select_customer": "Please select a customer.",
+  "customers.dialog.delete.title": "Delete Customer",
+  "customers.dialog.delete.body": "Are you sure you want to delete customer \"{label}\"?",
+  "customers.edit.add_title": "Add Customer",
+  "customers.edit.add_subtitle": "Add new customer",
+  "customers.edit.edit_title": "Edit Customer",
+  "customers.edit.edit_subtitle": "Edit customer details",
+  "customers.edit.field.name": "Full Name:",
+  "customers.edit.field.mobile": "Mobile:",
+  "customers.edit.field.subscription": "Subscription Code:",
+  "customers.edit.error.name_or_mobile_required": "At least one of name or mobile must be provided.",
+  "customers.edit.error.not_found": "Customer not found."
 }
