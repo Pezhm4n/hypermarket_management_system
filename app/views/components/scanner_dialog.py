@@ -233,6 +233,12 @@ class ScannerDialog(QDialog):
 
     def _build_ui(self) -> None:
         self.setModal(True)
+
+        if self._translator and self._translator.language == "fa":
+            self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        else:
+            self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+
         self.setMinimumSize(640, 560)
         self.setWindowTitle(self._tr("scanner.dialog.title", "Scan Barcode"))
 
@@ -349,14 +355,24 @@ class ScannerDialog(QDialog):
         if hasattr(self, "lblVideo") and self.lblVideo is not None:
             self.lblVideo.clear()
         
-        camera_type = "DroidCam" if use_droidcam else "Webcam"
+        # --- بخش اصلاح شده برای ترجمه ---
+        # 1. ابتدا نام نوع دوربین را ترجمه می‌کنیم
+        if use_droidcam:
+            camera_name = self._tr("scanner.camera_type.droidcam", "DroidCam")
+        else:
+            camera_name = self._tr("scanner.camera_type.webcam", "Webcam")
+
         if hasattr(self, "lblStatus") and self.lblStatus is not None:
-            self.lblStatus.setText(
-                self._tr(
-                    "scanner.status.initializing",
-                    f"Starting {camera_type}...",
-                )
+            # 2. دریافت قالب پیام از فایل JSON
+            # مثال فارسی در فایل جیسون: "در حال راه‌اندازی {camera_type}..."
+            msg_template = self._tr(
+                "scanner.status.initializing",
+                "Starting {camera_type}..."
             )
+            # 3. جایگذاری نام دوربین در متن پیام
+            final_message = msg_template.replace("{camera_type}", camera_name)
+            self.lblStatus.setText(final_message)
+        # -------------------------------
 
         # غیرفعال کردن controls در حین اتصال
         self.chkUseDroidCam.setEnabled(False)
@@ -426,11 +442,9 @@ class ScannerDialog(QDialog):
         try:
             if frame is None or not hasattr(frame, "shape"):
                 return
-
             height, width = frame.shape[:2]
             if height == 0 or width == 0:
                 return
-
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image = QImage(
                 rgb.data,
@@ -444,7 +458,6 @@ class ScannerDialog(QDialog):
                 # During the initial warmup period, keep the video area blank
                 if not self._scan_enabled:
                     return
-
                 self.lblVideo.setPixmap(
                     pixmap.scaled(
                         self.lblVideo.size(),
@@ -452,10 +465,20 @@ class ScannerDialog(QDialog):
                         Qt.TransformationMode.SmoothTransformation,
                     )
                 )
-                camera_type = "DroidCam" if self.chkUseDroidCam.isChecked() else "Webcam"
-                self.lblStatus.setText(
-                    self._tr("scanner.status.scanning", f"Scanning with {camera_type}...")
-                )
+
+                # --- اصلاح بخش ترجمه ---
+                # 1. ترجمه نام دوربین
+                if self.chkUseDroidCam.isChecked():
+                    camera_name = self._tr("scanner.camera_type.droidcam", "DroidCam")
+                else:
+                    camera_name = self._tr("scanner.camera_type.webcam", "Webcam")
+
+                # 2. دریافت قالب پیام و جایگذاری نام دوربین
+                msg_template = self._tr("scanner.status.scanning", "Scanning with {camera_type}...")
+                final_msg = msg_template.replace("{camera_type}", camera_name)
+                
+                self.lblStatus.setText(final_msg)
+                # -----------------------
                 
                 # تغییر متن دکمه به Restart
                 if self.btnStartCamera.isEnabled() == False:

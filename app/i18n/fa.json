@@ -382,5 +382,23 @@
   "return.info.no_quantities_entered": "حداقل برای یک کالا مقدار مرجوعی وارد کنید.",
   "return.info.zero_refund": "مبلغ کل مرجوعی صفر است.",
   "return.confirm_message": "مرجوعی با مبلغ کل {amount} انجام شود؟",
-  "return.success_message": "مرجوعی با موفقیت ثبت شد. مبلغ استرداد: {amount}"
+  "return.success_message": "مرجوعی با موفقیت ثبت شد. مبلغ استرداد: {amount}",
+
+  "scanner.dialog.title": "اسکن بارکد",
+  "scanner.checkbox.use_droidcam": "استفاده از DroidCam (دوربین خارجی)",
+  "scanner.button.start_camera": "شروع دوربین",
+  "scanner.button.connecting": "در حال اتصال...",
+  "scanner.button.restart_camera": "راه‌اندازی مجدد دوربین",
+  "scanner.label.select_camera": "نوع دوربین را انتخاب کرده و روی «شروع دوربین» کلیک کنید",
+  "scanner.status.ready": "آماده برای اسکن",
+  "scanner.status.initializing": "در حال راه‌اندازی {camera_type}...",
+  "scanner.status.scanning": "در حال اسکن با {camera_type}...",
+  "scanner.status.no_camera": "دوربین یافت نشد - لطفاً گزینه دیگری را امتحان کنید یا تصویر بارگذاری کنید",
+  "scanner.label.camera_error": "دوربین یافت نشد!\nتغییر نوع دوربین را امتحان کنید یا تصویر بارگذاری کنید.",
+  "scanner.button.load_image": "بارگذاری تصویر",
+  "scanner.button.close": "بستن",
+  "scanner.dialog.open_title": "انتخاب تصویر بارکد",
+  "scanner.info.no_barcode": "هیچ بارکدی در تصویر انتخاب شده یافت نشد.",
+  "scanner.camera_type.droidcam": "دراید‌کم",
+  "scanner.camera_type.webcam": "وب‌کم"
 }

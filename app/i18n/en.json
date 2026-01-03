@@ -355,5 +355,24 @@
   "return.info.no_quantities_entered": "Please enter at least one quantity to return.",
   "return.info.zero_refund": "The total refund amount is zero.",
   "return.confirm_message": "Process return with total refund {amount}?",
-  "return.success_message": "Return processed successfully. Refund amount: {amount}"
+  "return.success_message": "Return processed successfully. Refund amount: {amount}",
+
+  "scanner.dialog.title": "Scan Barcode",
+  "scanner.checkbox.use_droidcam": "Use DroidCam (External Camera)",
+  "scanner.button.start_camera": "Start Camera",
+  "scanner.button.connecting": "Connecting...",
+  "scanner.button.restart_camera": "Restart Camera",
+  "scanner.label.select_camera": "Select camera type and click 'Start Camera'",
+  "scanner.status.ready": "Ready to scan",
+  "scanner.status.initializing": "Starting {camera_type}...",
+  "scanner.status.scanning": "Scanning with {camera_type}...",
+  "scanner.status.no_camera": "Camera not found - Please try another option or load an image",
+  "scanner.label.camera_error": "Camera not found!\nTry changing the camera type or load an image.",
+  "scanner.button.load_image": "Load Image",
+  "scanner.button.close": "Close",
+  "scanner.dialog.open_title": "Select barcode image",
+  "scanner.info.no_barcode": "No barcode could be detected in the selected image.",
+  "scanner.camera_type.droidcam": "DroidCam",
+  "scanner.camera_type.webcam": "Webcam"
+
 }
