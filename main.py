@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 from qt_material import apply_stylesheet
 from sqlalchemy import text, inspect, Integer, Numeric
@@ -159,6 +161,11 @@ class Application:
         self.qt_app.setApplicationName(CONFIG.app_name)
         self.qt_app.setApplicationVersion(CONFIG.version)
 
+        # ------------------------------------------------------------------ #
+        # Set application icon/logo
+        # ------------------------------------------------------------------ #
+        self._set_application_icon()
+
         # Apply theme and font scale based on saved settings
         self._load_stylesheet()
 
@@ -184,7 +191,44 @@ class Application:
             translation_manager=self.translation_manager,
         )
 
+        # Set icon for main windows
+        self._set_window_icons()
+
         self._connect_signals()
+
+    # ------------------------------------------------------------------ #
+    # Set application icon
+    # ------------------------------------------------------------------ #
+    def _set_application_icon(self) -> None:
+        """
+        Set the application icon that appears in the taskbar and window title bar.
+        """
+        try:
+            # مسیر لوگو را تعیین کن
+            logo_path = Path("app/assets/logo.png")
+            
+            # بررسی وجود فایل
+            if logo_path.exists():
+                icon = QIcon(str(logo_path))
+                self.qt_app.setWindowIcon(icon)
+                logger.info(f"Application icon loaded successfully from {logo_path}")
+            else:
+                logger.warning(f"Logo file not found at {logo_path}")
+        except Exception:
+            logger.exception("Failed to load application icon")
+
+    def _set_window_icons(self) -> None:
+        """
+        Set icon for all main windows (login and main view).
+        """
+        try:
+            logo_path = Path("app/assets/logo.png")
+            if logo_path.exists():
+                icon = QIcon(str(logo_path))
+                self.main_view.setWindowIcon(icon)
+                self.login_view.setWindowIcon(icon)
+        except Exception:
+            logger.exception("Failed to set window icons")
 
     # ------------------------------------------------------------------ #
     # Initialize look & feel
@@ -302,6 +346,13 @@ class Application:
             translation_manager=self.translation_manager,
         )
         self.login_view.login_success.connect(self._on_login_success)
+        # Set icon for the new login view
+        try:
+            logo_path = Path("app/assets/logo.png")
+            if logo_path.exists():
+                self.login_view.setWindowIcon(QIcon(str(logo_path)))
+        except Exception:
+            logger.exception("Failed to set login view icon")
         self.login_view.show()
 
     def _on_language_changed(self, language: str) -> None:

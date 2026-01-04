@@ -31,6 +31,7 @@ hypermarket_backup.db
 # Stores local shop info (Name, Phone, etc.)
 config.json
 config.json.tmp
+user_settings.json
 
 # --- Generated Outputs (Receipts & Shift Reports) ---
 *.pdf
