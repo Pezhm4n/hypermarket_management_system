@@ -12,6 +12,7 @@ from PyQt6.QtGui import (
     QShortcut,
     QTextDocument,
     QPageLayout,
+    QFont,
 )
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import (
@@ -232,6 +233,7 @@ class SalesView(QWidget):
 
         self._translator.language_changed.connect(self._on_language_changed)
         self._apply_translations()
+        self._style_barcode_input()
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -632,6 +634,33 @@ class SalesView(QWidget):
         # Allow deleting the selected cart row with the Delete key
         self._delete_shortcut = QShortcut(QKeySequence("Delete"), self.tblCart)
         self._delete_shortcut.activated.connect(self._remove_selected_row)
+
+    def _style_barcode_input(self) -> None:
+        """
+        Lightly standardize the barcode input field so it is a bit wider
+        and immediately ready for input, without breaking the existing layout
+        or overriding the global theme.
+        """
+        try:
+            barcode: Optional[QLineEdit] = getattr(self, "txtBarcode", None)
+            if barcode is None:
+                logger.warning(
+                    "SalesView txtBarcode not found; cannot apply barcode styling."
+                )
+                return
+
+            # Only increase the minimum width slightly, and only if the original
+            # minimum is smaller. This avoids forcing the field out of its layout
+            # while still giving it a bit more room than the default UI.
+            current_min = barcode.minimumWidth()
+            target_min = 220
+            if current_min < target_min:
+                barcode.setMinimumWidth(target_min)
+
+            # Ensure the field is ready for typing/scanning on view load.
+            barcode.setFocus()
+        except Exception as e:
+            logger.error("Error styling barcode input: %s", e, exc_info=True)
 
     def _connect_signals(self) -> None:
         self.txtBarcode.returnPressed.connect(self._on_barcode_entered)

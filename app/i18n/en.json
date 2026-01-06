@@ -157,8 +157,8 @@
 
   "settings.appearance.title": "Appearance",
   "settings.theme.label": "Theme",
-  "settings.theme.option.dark_teal": "Dark Teal",
-  "settings.theme.option.light": "Light",
+  "settings.theme.option.dark_default": "Dark (Default)",
+  "settings.theme.option.light_mode": "Light Mode",
   "settings.font_scale.label": "Font size",
   "settings.font_scale.option.small": "Small",
   "settings.font_scale.option.medium": "Medium",

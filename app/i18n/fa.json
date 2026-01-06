@@ -161,8 +161,8 @@
 
   "settings.appearance.title": "نمای ظاهری",
   "settings.theme.label": "پوسته",
-  "settings.theme.option.dark_teal": "حالت پیش‌فرض (تیره)",
-  "settings.theme.option.light": "حالت روشن",
+  "settings.theme.option.dark_default": "حالت پیش‌فرض (تیره)",
+  "settings.theme.option.light_mode": "حالت روشن",
   "settings.font_scale.label": "اندازه قلم",
   "settings.font_scale.option.small": "کوچک",
   "settings.font_scale.option.medium": "متوسط",

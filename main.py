@@ -7,6 +7,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QFont
 from qt_material import apply_stylesheet
 from sqlalchemy import text, inspect, Integer, Numeric
 from sqlalchemy.exc import SQLAlchemyError
@@ -154,19 +155,20 @@ class Application:
         # Configure logging before anything else so startup issues are captured.
         configure_logging(CONFIG.log_directory)
 
-        # Load persisted UI settings (theme / language / font scale)
+        # Load persisted UI settings (theme / language)
         self._settings = SettingsManager.load_settings()
 
         self.qt_app = QApplication(sys.argv)
         self.qt_app.setApplicationName(CONFIG.app_name)
         self.qt_app.setApplicationVersion(CONFIG.version)
 
-        # ------------------------------------------------------------------ #
-        # Set application icon/logo
-        # ------------------------------------------------------------------ #
+        # Apply a fixed base font size for consistent UI across platforms.
+        base_font = self.qt_app.font()
+        base_font.setPointSize(11)
+        self.qt_app.setFont(base_font)
         self._set_application_icon()
 
-        # Apply theme and font scale based on saved settings
+        # Apply theme based on saved settings
         self._load_stylesheet()
 
         # Internationalization
@@ -190,7 +192,6 @@ class Application:
             auth_controller=self.auth_controller,
             translation_manager=self.translation_manager,
         )
-
         # Set icon for main windows
         self._set_window_icons()
 
@@ -235,18 +236,32 @@ class Application:
     # ------------------------------------------------------------------ #
     def _load_stylesheet(self) -> None:
         """
-        Apply the saved theme (Qt Material XML or QSS fallback) and font scale.
+        Apply the saved theme (custom dark QSS or Qt Material light theme).
         """
         try:
             settings = getattr(self, "_settings", {}) or {}
-            theme_value = settings.get("theme", "dark_teal.xml")
+            theme_value = settings.get("theme", "default_dark")
 
-            if isinstance(theme_value, str) and theme_value.endswith(".xml"):
-                apply_stylesheet(self.qt_app, theme=theme_value)
-            else:
+            if theme_value == "default_dark":
+                # Native dark theme defined in app/styles/main.qss
                 self._load_stylesheet_from_qss()
-
-            self._apply_font_scale_from_settings()
+            elif isinstance(theme_value, str) and theme_value.startswith("light"):
+                # Qt Material theme (currently only light_blue.xml)
+                apply_stylesheet(self.qt_app, theme=theme_value, invert_secondary=True)
+            else:
+                # Any unknown or legacy value falls back to the native dark theme
+                logger.warning(
+                    "Unsupported or legacy theme value '%s'; falling back to default_dark.",
+                    theme_value,
+                )
+                self._load_stylesheet_from_qss()
+                try:
+                    SettingsManager.save_setting("theme", "default_dark")
+                except Exception:
+                    logger.exception(
+                        "Failed to normalize theme value '%s' to 'default_dark'.",
+                        theme_value,
+                    )
         except Exception:
             logger.exception(
                 "Failed to apply theme from settings; falling back to QSS + default font."
@@ -274,31 +289,7 @@ class Application:
         except Exception:
             logger.exception("Failed to load application stylesheet.")
 
-    def _apply_font_scale_from_settings(self) -> None:
-        """
-        Apply a global font size based on the persisted font_scale value.
-        """
-        try:
-            settings = getattr(self, "_settings", {}) or {}
-            raw_scale = settings.get("font_scale", 1.0)
-            try:
-                scale_value = float(raw_scale)
-            except (TypeError, ValueError):
-                scale_value = 1.0
-
-            # Map the numeric scale to one of the discrete sizes used in SettingsView.
-            if scale_value <= 0.95:
-                point_size = 10  # small
-            elif scale_value >= 1.05:
-                point_size = 14  # large
-            else:
-                point_size = 12  # medium
-
-            font = self.qt_app.font()
-            font.setPointSize(point_size)
-            self.qt_app.setFont(font)
-        except Exception:
-            logger.exception("Failed to apply font scale from settings.")
+    
 
     def _apply_layout_direction(self) -> None:
         """

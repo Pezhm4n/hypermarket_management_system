@@ -143,7 +143,8 @@ class MainView(QMainWindow):
         self._low_stock_click_enabled: bool = False
 
         # Ensure a professional default window size
-        self.setMinimumSize(1280, 800)
+        # Slightly wider minimum to give more breathing room to content layouts.
+        self.setMinimumSize(1360, 800)
 
         self._build_ui()
         self._create_module_views()

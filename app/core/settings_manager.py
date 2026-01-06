@@ -19,9 +19,8 @@ class SettingsManager:
     ``user_settings.json`` and currently tracks:
 
         {
-            "theme": "dark_teal.xml",
-            "language": "fa",
-            "font_scale": 1.0
+            "theme": "default_dark",
+            "language": "fa"
         }
 
     All methods are classmethods so the manager can be used without
@@ -30,9 +29,8 @@ class SettingsManager:
 
     _settings_path: Path = ROOT_DIR / "user_settings.json"
     _defaults: Dict[str, Any] = {
-        "theme": "dark_teal.xml",
+        "theme": "default_dark",
         "language": "fa",
-        "font_scale": 1.0,
     }
     _cache: Dict[str, Any] | None = None
 
