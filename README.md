@@ -1,391 +1,177 @@
-# 🛒 سامانه مدیریت هایپرمارکت
+# 🛒 سامانه مدیریت هایپرمارکت (HMS)
 ## Hypermarket Management System
 
-سامانه جامع مدیریت هایپرمارکت با پشتیبانی کامل از زبان‌های فارسی و انگلیسی
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)
+![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green?logo=qt&logoColor=white)
+![Database](https://img.shields.io/badge/Database-SQLAlchemy%20%7C%20PostgreSQL%20%7C%20SQLite-blue)
+![License](https://img.shields.io/badge/License-MIT-orange)
 
-A comprehensive hypermarket management system with full support for Persian and English languages
+> **سامانه جامع مدیریت فروشگاهی با معماری MVC، دیتابیس هیبریدی و پشتیبانی دو زبانه**
+>
+> *A comprehensive retail management system featuring MVC architecture, hybrid database strategy, and bilingual support.*
 
 ---
 
 ## 📋 فهرست مطالب | Table of Contents
 
-- [معرفی](#معرفی)
-- [ویژگی‌ها](#ویژگی‌ها)
-- [معماری پایگاه داده](#معماری-پایگاه-داده)
-- [نحوه استفاده](#نحوه-استفاده)
-  - [ورود به سیستم](#ورود-به-سیستم)
-  - [داشبورد](#داشبورد)
-  - [مدیریت کالاها](#مدیریت-کالاها)
-  - [فروش](#فروش)
-  - [مدیریت تامین‌کنندگان](#مدیریت-تامین‌کنندگان)
-  - [مدیریت کاربران](#مدیریت-کاربران)
-  - [گزارش‌ها](#گزارش‌ها)
-  - [تنظیمات](#تنظیمات)
-- [نصب و راه‌اندازی](#نصب-و-راه‌اندازی)
-- [سازندگان](#سازندگان)
+- [معرفی پروژه | Overview](#-معرفی-پروژه--overview)
+- [تکنولوژی‌های استفاده شده | Tech Stack](#-تکنولوژی‌های-استفاده-شده--tech-stack)
+- [ویژگی‌های کلیدی | Key Features](#-ویژگی‌های-کلیدی--key-features)
+- [معماری پایگاه داده | Database Architecture](#-معماری-پایگاه-داده--database-architecture)
+- [ساختار پروژه | Project Structure](#-ساختار-پروژه--project-structure)
+- [نصب و راه‌اندازی | Installation](#-نصب-و-راه‌اندازی--installation)
+- [راهنمای کاربری | User Manual](#-راهنمای-کاربری--user-manual)
+- [تیم توسعه | Developers](#-تیم-توسعه--developers)
 
 ---
 
-## 🎯 معرفی | Introduction
+## 🎯 معرفی پروژه | Overview
 
-سامانه مدیریت هایپرمارکت یک نرم‌افزار کامل برای مدیریت فروشگاه‌های بزرگ است که امکان مدیریت کالاها، فروش، تامین‌کنندگان، کاربران و گزارش‌گیری را فراهم می‌کند.
+**سامانه مدیریت هایپرمارکت (HMS)** یک نرم‌افزار دسکتاپ مدرن است که با هدف مدیریت یکپارچه فروشگاه‌های بزرگ طراحی شده است. این سیستم با استفاده از زبان پایتون و فریم‌ورک PyQt6 توسعه یافته و از الگوی معماری **MVC (Model-View-Controller)** برای تضمین تفکیک وظایف و قابلیت نگهداری بالا پیروی می‌کند.
 
-The Hypermarket Management System is a complete software solution for managing large retail stores, providing capabilities for product management, sales, suppliers, users, and reporting.
+**Hypermarket Management System (HMS)** is a modern desktop application designed for seamless retail management. Developed using Python and PyQt6, it strictly follows the **MVC (Model-View-Controller)** architectural pattern to ensure separation of concerns and maintainability.
 
 ---
 
-## ✨ ویژگی‌ها | Features
+## 🛠 تکنولوژی‌های استفاده شده | Tech Stack
 
-- 🌐 پشتیبانی از دو زبان فارسی و انگلیسی
-- 📊 داشبورد تحلیلی با نمودارهای تعاملی
-- 🏪 مدیریت جامع کالاها و موجودی انبار
-- 💰 سیستم فروش پیشرفته با امکان صدور فاکتور
-- 👥 مدیریت تامین‌کنندگان و سفارشات
-- 🔐 سیستم کاربری با سطوح دسترسی مختلف
-- 📈 گزارش‌های مالی و عملکردی دقیق
-- 🎨 رابط کاربری مدرن و کاربرپسند
+| Category | Technology | Description |
+| :--- | :--- | :--- |
+| **Core** | Python 3.11+ | زبان اصلی برنامه |
+| **GUI** | PyQt6 | رابط کاربری گرافیکی مدرن |
+| **ORM** | SQLAlchemy 2.0 | مدیریت ارتباط با پایگاه داده |
+| **Database** | PostgreSQL / SQLite | استراتژی هیبریدی (توسعه/انتشار) |
+| **Analytics** | Matplotlib & Pandas | رسم نمودارها و تحلیل داده‌ها |
+| **Reports** | ReportLab | تولید گزارش‌های PDF |
+| **Hardware** | OpenCV & PyZbar | اسکن بارکد با وبکم |
+| **Utils** | Selenium | دریافت اطلاعات آنلاین کالا (Web Scraping) |
+
+---
+
+## ✨ ویژگی‌های کلیدی | Key Features
+
+* **Hybrid Database Strategy:** پشتیبانی همزمان از PostgreSQL (برای محیط توسعه و شبکه) و SQLite (برای نسخه پرتابل و تک‌کاربره).
+* **Role-Based Access Control (RBAC):** مدیریت سطوح دسترسی کاربران (مدیر، صندوق‌دار، انباردار).
+* **Bilingual UI:** تغییر زبان برنامه (فارسی/انگلیسی) به صورت آنی (Runtime).
+* **Inventory Intelligence:** هشدار موجودی کم، تاریخ انقضا و مدیریت دسته‌های کالا (Batches).
+* **Loyalty System:** سیستم باشگاه مشتریان با قابلیت امتیازدهی و تخفیف خودکار.
+* **Financial Security:** سیستم مغایرت‌گیری صندوق (Shift Reconciliation/Z-Report).
 
 ---
 
 ## 🗄️ معماری پایگاه داده | Database Architecture
 
-سیستم از یک پایگاه داده رابطه‌ای با معماری نرمال شده استفاده می‌کند که شامل جداول اصلی زیر است:
+این سیستم از یک طراحی پایگاه داده رابطه‌ای (RDBMS) کاملاً نرمال‌سازی شده (تا سطح **3NF**) استفاده می‌کند.
 
-The system uses a normalized relational database architecture that includes the following main tables:
+The system utilizes a fully normalized relational database design (**3NF**) to ensure data integrity and efficiency.
 
-### نمودار ER | ER Diagram
+### 📊 نمودارها | Diagrams
 
-**نمودار رابطه‌ای موجودیت‌ها | Entity Relationship Diagram:**
+<details>
+<summary><b>نمایش نمودار ER (Entity Relationship)</b></summary>
+<br>
+<img src="database_images/er.png" alt="ER Diagram" width="100%">
+</details>
 
-![Database Schema](database_images/er.png)
+<details>
+<summary><b>نمایش مدل رابطه‌ای (Relational Schema)</b></summary>
+<br>
+<img src="database_images/relation.png" alt="Relational Model" width="100%">
+</details>
 
-![ER Diagram](database_images/relation.png)
+### 📑 جداول اصلی | Core Tables
 
-### جداول اصلی | Main Tables
-
-#### 👤 مدیریت کاربران | User Management
-- **UserAccount**: اطلاعات حساب کاربری شامل نام کاربری، رمز عبور، تاریخ ورود و ایمیل
-- **Role**: نقش‌های سیستم (مدیر، فروشنده، انبار‌دار و غیره)
-- **UserRole**: ارتباط بین کاربران و نقش‌ها (رابطه چند به چند)
-- **Employee**: اطلاعات کارمندان شامل نام، نام خانوادگی، موبایل، آدرس و شهر
-
-#### 🏪 مدیریت محصولات | Product Management
-- **Product**: اطلاعات محصولات شامل بارکد، نام، قیمت خرید، قیمت فروش و قیمت عمده‌فروشی
-- **Category**: دسته‌بندی محصولات
-- **InvBatch**: دسته‌های موجودی انبار با شماره دسته و تاریخ انقضا
-- **InventoryBatch**: جزئیات موجودی هر دسته شامل تعداد، قیمت خرید، تاریخ ورود و کد مکان
-
-#### 🤝 مدیریت تامین‌کنندگان | Supplier Management
-- **Supplier**: اطلاعات تامین‌کنندگان شامل نام شرکت، شخص تماس، ایمیل، شماره تلفن، آدرس و شهر
-- **ProdSupp**: ارتباط بین محصولات و تامین‌کنندگان (رابطه چند به چند)
-- **PurchaseOrder**: سفارشات خرید با وضعیت، شماره سفارش و تاریخ
-
-#### 💰 مدیریت فروش | Sales Management
-- **Invoice**: فاکتورهای فروش شامل شماره فاکتور، تاریخ، وضعیت و شماره صورت‌حساب
-- **InvoiceItem**: اقلام فاکتور با تعداد، قیمت فروش و قیمت خرید
-- **Payment**: پرداخت‌ها با روش پرداخت، مبلغ، شماره کارت و شماره تراکنش
-- **Customer**: اطلاعات مشتریان شامل نام و امتیازات وفاداری
-
-#### 💼 مدیریت نوبت‌کاری | Shift Management
-- **Shift**: نوبت‌های کاری کارمندان با زمان شروع و پایان
-
-#### 📦 مدیریت بازگشت کالا | Returns Management
-- **Returns**: بازگشت کالاها با تاریخ، دلیل، مبلغ بازپرداخت و وضعیت
-
-### روابط کلیدی | Key Relationships
-
-**رابطه یک به چند | One-to-Many:**
-- هر کاربر می‌تواند چندین نوبت کاری داشته باشد
-- هر کارمند می‌تواند چندین فاکتور صادر کند
-- هر فاکتور می‌تواند چندین قلم کالا داشته باشد
-- هر محصول می‌تواند در چندین دسته موجودی باشد
-- هر مشتری می‌تواند چندین سفارش داشته باشد
-
-**رابطه چند به چند | Many-to-Many:**
-- کاربران و نقش‌ها (از طریق جدول UserRole)
-- محصولات و تامین‌کنندگان (از طریق جدول ProdSupp)
-- فاکتورها و محصولات (از طریق جدول InvoiceItem)
-
-### ویژگی‌های طراحی | Design Features
-
-✅ **نرمال‌سازی**: پایگاه داده تا فرم نرمال سوم (3NF) نرمال شده است  
-✅ **یکپارچگی ارجاعی**: استفاده از کلیدهای خارجی برای حفظ یکپارچگی داده‌ها  
-✅ **مقیاس‌پذیری**: طراحی به گونه‌ای که امکان افزودن جداول و روابط جدید وجود دارد  
-✅ **بهینه‌سازی**: استفاده از ایندکس‌ها برای بهبود عملکرد کوئری‌ها  
-✅ **انعطاف‌پذیری**: پشتیبانی از روابط چند به چند برای گسترش آینده
+1.  **مدیریت کاربران (Auth):** `UserAccount`, `Role`, `UserRole`, `Employee`
+2.  **محصولات و انبار (Inventory):** `Product`, `Category`, `InventoryBatch` (ردیابی تاریخ انقضا و سری ساخت)
+3.  **فروش و مالی (Sales):** `Invoice`, `InvoiceItem`, `Payment`, `Shift`, `Returns` (مدیریت مرجوعی)
+4.  **تامین و مشتریان (CRM/SCM):** `Supplier`, `Customer`, `PurchaseOrder`
 
 ---
 
-## 📖 نحوه استفاده | User Guide
-
-### 🔑 ورود به سیستم | Login
-
-برای ورود به سیستم، نام کاربری و رمز عبور خود را وارد کنید.
-
-To log in to the system, enter your username and password.
-
-**نمای فارسی | Persian View:**
-![Login FA](عکس_هایپرمارکت/لاگین.png)
-
-**نمای انگلیسی | English View:**
-![Login EN](hypermarket_images/login.png)
-
----
-
-### 📊 داشبورد | Dashboard
-
-پس از ورود به سیستم، داشبورد اصلی شامل اطلاعات کلیدی زیر نمایش داده می‌شود:
-
-After logging in, the main dashboard displays the following key information:
-
-- فروش امروز | Today's Sales
-- سود امروز | Today's Profit  
-- کالاهای رو به اتمام | Low Stock Items
-- سفارش‌های امروز | Today's Orders
-- نمودار فروش روزانه | Daily Sales Chart
-
-**نمای فارسی | Persian View:**
-![Dashboard FA](عکس_هایپرمارکت/داشبورد.png)
-
-**نمای انگلیسی | English View:**
-![Dashboard EN](hypermarket_images/dashboard.png)
-
----
-
-### 📦 مدیریت کالاها | Product Management
-
-در این بخش می‌توانید:
-
-In this section you can:
-
-- لیست تمام کالاها را مشاهده کنید
-- کالای جدید اضافه کنید
-- اطلاعات کالا را ویرایش کنید
-- موجودی انبار را مدیریت کنید
-- گزارش موجودی را دریافت کنید
-
-اطلاعات نمایش داده شده شامل:
-- بارکد | Barcode
-- دسته‌بندی | Category
-- قیمت ثابت | Fixed Price
-- تعداد | Quantity
-- جدول موجودی | Inventory Table
-
-**نمای فارسی | Persian View:**
-![Products FA](عکس_هایپرمارکت/انبار.png)
-
-**نمای انگلیسی | English View:**
-![Products EN](hypermarket_images/inventory.png)
-
-#### افزودن کالا | Add Product
-
-برای افزودن کالای جدید روی دکمه "افزودن کالا" کلیک کنید و فرم زیر را پر کنید:
-
-To add a new product, click the "Add Product" button and fill in the following form:
-
-- نام کالا | Product Name
-- بارکد | Barcode
-- قیمت | Price
-- موجودی | Stock
-- دسته‌بندی | Category
-
----
-
-### 💳 فروش | Sales
-
-صفحه فروش به شما امکان می‌دهد:
-
-The sales page allows you to:
-
-- جستجوی سریع کالا با بارکد یا نام | Quick product search by barcode or name
-- افزودن کالا به سبد خرید | Add products to cart
-- اعمال تخفیف | Apply discounts
-- انتخاب روش پرداخت | Select payment method
-- صدور فاکتور | Issue invoice
-- دریافت فاکتور | Print receipt
-
-اطلاعات نمایش داده شده:
-- لیست کالاهای انتخابی با تعداد و قیمت | Selected items with quantity and price
-- مجموع کل | Total Amount
-- تخفیف | Discount
-- قابل پرداخت | Payable Amount
-
-عملیات موجود:
-- تسویه | Checkout
-- فراخوانی فاکتور | Recall Invoice
-- نگه داشتن فاکتور | Hold Invoice
-- حذف همه | Clear All
-- نشان سیف | Print Bill
-
-**نمای فارسی | Persian View:**
-![Sales FA](عکس_هایپرمارکت/فروش.png)
-
-**نمای انگلیسی | English View:**
-![Sales EN](hypermarket_images/sales.png)
-
----
-
-### 🏭 مدیریت تامین‌کنندگان | Supplier Management
-
-در این بخش می‌توانید:
-
-In this section you can:
-
-- لیست تامین‌کنندگان را مشاهده کنید | View suppliers list
-- تامین‌کننده جدید اضافه کنید | Add new supplier
-- اطلاعات تامین‌کننده را ویرایش کنید | Edit supplier information
-
-اطلاعات تامین‌کننده شامل:
-- شناسه | ID
-- نام شرکت | Company Name
-- نام مسئول | Contact Person
-- تلفن | Phone
-- آدرس | Address
-
-**نمای فارسی | Persian View:**
-![Suppliers FA](عکس_هایپرمارکت/تامین_کنندگان.png)
-
-**نمای انگلیسی | English View:**
-![Suppliers EN](hypermarket_images/suppliers.png)
-
----
-
-### 👤 مدیریت کاربران | User Management
-
-مدیریت کاربران شامل موارد زیر است:
-
-User management includes:
-
-- مشاهده لیست کاربران | View users list
-- افزودن کاربر جدید | Add new user
-- ویرایش اطلاعات کاربر | Edit user information
-- حذف کاربر | Delete user
-
-اطلاعات کاربر:
-- نام کاربری | Username
-- نقش | Role
-- نام و نام خانوادگی | Full Name
-- وضعیت | Status
-
-**نمای فارسی | Persian View:**
-![Users FA](عکس_هایپرمارکت/کاربران.png)
-
-**نمای انگلیسی | English View:**
-![Users EN](hypermarket_images/users.png)
-
----
-
-### 📈 گزارش‌ها | Reports
-
-بخش گزارش‌ها امکانات زیر را ارائه می‌دهد:
-
-The reports section provides:
-
-- گزارش فروش روزانه | Daily sales report
-- نمودار فروش | Sales chart
-- فیلتر بر اساس تاریخ | Filter by date
-- جزئیات تراکنش‌ها | Transaction details
-- خروجی CSV | CSV export
-
-اطلاعات نمایش داده شده:
-- تاریخ | Date
-- مشتری | Customer
-- مبلغ کل | Total Amount
-- تخفیف | Discount
-- تعداد تراکنش‌ها | Number of Transactions
-- سود کل | Total Profit
-- مجموع فروش | Total Sales
-
-**نمای فارسی | Persian View:**
-![Reports FA](عکس_هایپرمارکت/گزارش_ها.png)
-
-**نمای انگلیسی | English View:**
-![Reports EN](hypermarket_images/reports.png)
-
----
-
-### ⚙️ تنظیمات | Settings
-
-در بخش تنظیمات می‌توانید:
-
-In the settings section you can:
-
-**پروفایل | Profile:**
-- مشاهده و ویرایش اطلاعات حساب کاربری | View and edit account information
-- نام | Name
-- نام خانوادگی | Surname
-- کد ملی | National ID
-- نام کاربری | Username
-
-**تغییر رمز عبور | Change Password:**
-- تغییر رمز عبور حساب | Change account password
-- رمز عبور فعلی | Current Password
-- رمز عبور جدید | New Password
-- تکرار رمز عبور جدید | Confirm New Password
-
-**زبان | Language:**
-- انتخاب زبان برنامه (فارسی/انگلیسی) | Select application language (Persian/English)
-
-**اطلاعات فروشگاه | Store Information:**
-- نام فروشگاه | Store Name
-- آدرس | Address
-- تلفن | Phone
-
-**نمای ظاهری | Appearance:**
-- انتخاب پوسته | Theme Selection
-- اندازه قلم | Font Size
-
-**نمای فارسی | Persian View:**
-![Settings FA 1](عکس_هایپرمارکت/تنظیمات_1.png)
-![Settings FA 2](عکس_هایپرمارکت/تنظیمات_2.png)
-
-**نمای انگلیسی | English View:**
-![Settings EN 1](hypermarket_images/settings1.png)
-![Settings EN 2](hypermarket_images/settings2.png)
+## 📂 ساختار پروژه | Project Structure
+
+```text
+HMS-project/
+├── app/
+│   ├── controllers/   # Business Logic (MVC Controllers)
+│   ├── models/        # Database Schemas (SQLAlchemy Models)
+│   ├── views/         # UI Files & View Logic (PyQt6)
+│   │   ├── ui/        # .ui files (Qt Designer)
+│   │   └── components/# Reusable UI Widgets
+│   ├── core/          # Utilities (DB Manager, Config, Logger)
+│   └── i18n/          # Translation Files (JSON)
+├── database_images/   # Documentation Images
+├── requirements.txt   # Project Dependencies
+└── main.py            # Entry Point
+
+```
 
 ---
 
 ## 🚀 نصب و راه‌اندازی | Installation
 
+### پیش‌نیازها | Prerequisites
+
+* Python 3.11 or higher
+* Git
+
+### مراحل نصب | Steps
+
+1. **کلون کردن مخزن | Clone the repository:**
 ```bash
-# کلون کردن پروژه | Clone the project
-git clone https://github.com/Pezhm4n/hypermarket_management_system.git
+git clone [https://github.com/Pezhm4n/hypermarket_management_system.git](https://github.com/Pezhm4n/hypermarket_management_system.git)
+cd hypermarket_management_system
 
-# نصب وابستگی‌ها | Install dependencies
+```
+
+
+2. **ساخت محیط مجازی (اختیاری) | Create Virtual Environment:**
+```bash
+
+python -m venv venv
+
+# Windows:
+venv\Scripts\activate
+
+# Linux/Mac:
+source venv/bin/activate
+
+```
+
+
+3. **نصب وابستگی‌ها | Install Dependencies:**
+```bash
 pip install -r requirements.txt
+```
 
-# اجرای برنامه | Run the application
+
+4. **اجرای برنامه | Run Application:**
+```bash
 python main.py
 ```
 
+
+
+> **نکته:** 
+> برنامه به صورت پیش‌فرض از دیتابیس **SQLite** استفاده می‌کند و نیازی به نصب سرور دیتابیس جداگانه برای تست نیست.
+
 ---
 
-## 👥 سازندگان | Developers
+## 📖 راهنمای کاربری | User Manual
 
-این پروژه توسط تیمی متشکل از دو نفر توسعه داده شده است.
+برای مشاهده آموزش کامل نحوه کار با نرم‌افزار، تصاویر محیط برنامه و راهنمای گام‌به‌گام، لطفاً به فایل‌های راهنما مراجعه کنید:
 
-This project was developed by a team of two developers.
+For detailed usage instructions, screenshots, and step-by-step guides, please refer to the help files:
+
+* 📘 **[راهنمای فارسی (Persian Manual)](https://github.com/Pezhm4n/hypermarket_management_system/blob/main/fa_help.md)**
+* 📘 **[English Manual](https://github.com/Pezhm4n/hypermarket_management_system/blob/main/en_help.md)**
 
 ---
 
 ## 📄 مجوز | License
 
-این پروژه تحت مجوز MIT منتشر شده است.
+This project is licensed under the **MIT License**.
 
-This project is released under the MIT License.
-
----
-
-## 🤝 مشارکت | Contributing
-
-از مشارکت شما در بهبود این پروژه استقبال می‌کنیم!
-
-We welcome your contributions to improve this project!
-
----
-
-## 📧 تماس | Contact
-
-برای گزارش مشکلات یا پیشنهادات از بخش Issues گیت‌هاب استفاده کنید.
-
-For reporting issues or suggestions, please use the GitHub Issues section.
+```text
+Copyright (c) 2026 Hypermarket Management System Team
+```
