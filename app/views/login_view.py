@@ -4,11 +4,13 @@ from typing import Optional
 
 from PyQt6 import uic
 from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSpacerItem, QSizePolicy
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QLabel, QSizePolicy, QSpacerItem, QVBoxLayout, QWidget
 
 from app.controllers.auth_controller import AuthController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
+from app.utils import resource_path
 
 
 class LoginView(QWidget):
@@ -32,7 +34,13 @@ class LoginView(QWidget):
         self._auth_controller = auth_controller
         self._translator = translation_manager
 
-        uic.loadUi("app/views/ui/login.ui", self)
+        # Apply application identity (icon + title)
+        logo_path = resource_path("app/assets/logo.png")
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
+        self.setWindowTitle("سامانه مدیریت هایپرمارکت PeMa - نسخه ۱.۰")
+
+        uic.loadUi(resource_path("app/views/ui/login.ui"), self)
 
         # Fix window size and center content visually
         self.setFixedSize(400, 550)
@@ -66,6 +74,14 @@ class LoginView(QWidget):
                     )
                 )
 
+            # Copyright footer at the bottom of the login form
+            footer = QLabel("© 2026 تمامی حقوق محفوظ است.", self)
+            footer.setObjectName("LoginFooterLabel")
+            footer.setAlignment(
+                Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+            )
+            layout.addWidget(footer)
+
         # Ensure error label uses a predictable object name for styling.
         self.lblError.setObjectName("LoginErrorLabel")
         self.lblError.setText("")
@@ -83,7 +99,8 @@ class LoginView(QWidget):
         """
         Apply localized texts to all visible widgets on the login form.
         """
-        self.setWindowTitle(self._translator["login.window_title"])
+        # Fixed branded window title per release requirements
+        self.setWindowTitle("سامانه مدیریت هایپرمارکت PeMa - نسخه ۱.۰")
         self.lblTitle.setText(self._translator["login.heading"])
         self.lblUsername.setText(self._translator["login.username_label"])
         self.txtUsername.setPlaceholderText(

@@ -14,6 +14,8 @@ from PyQt6.QtGui import (
     QPageLayout,
     QFont,
 )
+
+from app.utils import resource_path
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -213,7 +215,7 @@ class SalesView(QWidget):
         self._current_manual_discount: Decimal = Decimal("0")
         self._current_total_amount: Decimal = Decimal("0")
 
-        uic.loadUi("app/views/ui/sales_view.ui", self)
+        uic.loadUi(resource_path("app/views/ui/sales_view.ui"), self)
 
         self._inject_scan_barcode_button()
         self._inject_customer_controls()

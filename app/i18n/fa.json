@@ -1,6 +1,7 @@
 {
   "app.title": "سامانه مدیریت هایپرمارکت",
   "app.version": "1.0.0",
+  "app.footer.copyright": "© 2026 تمامی حقوق محفوظ است.",
 
   "dialog.error_title": "خطا",
   "dialog.warning_title": "هشدار",
@@ -18,6 +19,7 @@
   "login.error.invalid": "نام کاربری یا رمز عبور نادرست است.",
 
   "main.window_title": "سامانه مدیریت هایپرمارکت",
+  "main.window_title_full": "سامانه مدیریت هایپرمارکت PeMa - نسخه ۱.۰",
   "main.header.welcome": "خوش آمدید",
   "main.header.subtitle": "داشبورد مدیریت هایپرمارکت",
 
@@ -27,6 +29,7 @@
   "sidebar.reports": "گزارش‌ها",
   "sidebar.users": "کاربران",
   "sidebar.settings": "تنظیمات",
+  "sidebar.help": "راهنما",
   "sidebar.logout": "خروج",
   "sidebar.language.en": "انگلیسی",
   "sidebar.language.fa": "فارسی",
@@ -497,5 +500,26 @@
   "users.dialog.error.mobile_invalid": "شماره موبایل باید با ۰۹ شروع شده و ۱۱ رقم باشد.",
   "users.dialog.error.password_min_length": "رمز عبور باید حداقل ۴ کاراکتر باشد.",
   "users.dialog.error.password_mismatch": "رمز عبور و تکرار آن یکسان نیستند.",
-  "scanner.dialog.file_filter": "فایل‌های تصویر (*.png *.jpg *.jpeg *.bmp *.gif)"
+  "scanner.dialog.file_filter": "فایل‌های تصویر (*.png *.jpg *.jpeg *.bmp *.gif)",
+
+  "help.window_title": "راهنما",
+  "help.dialog.title": "راهنمای PeMa Manager",
+  "help.missing_file": "فایل راهنما \"{filename}\" پیدا نشد. لطفاً آن را در کنار فایل اجرایی قرار دهید.",
+  "help.toggle_images": "نمایش تصاویر",
+  "help.zoom_in": "بزرگ‌نمایی (A+)",
+  "help.zoom_out": "کوچک‌نمایی (A-)",
+
+  "about.window_title": "درباره سامانه مدیریت هایپرمارکت PeMa",
+  "about.app_name": "PeMa Manager (Persian Market)",
+  "about.version": "نسخه نرم‌افزار: v1.0.0",
+  "about.year": "سال توسعه: ۲۰۲۶",
+  "about.developers.title": "توسعه‌دهندگان:",
+  "about.developers.primary": "<b>Pezhm4n</b> و <b>HTIcodes</b>",
+  "about.links.primary": "GitHub: <a href=\"https://github.com/Pezhm4n\" style=\"color:#4db8ff;\">github.com/Pezhm4n</a><br>LinkedIn: <a href=\"https://www.linkedin.com/in/pezhman-sarmadi/\" style=\"color:#4db8ff;\">pezhman-sarmadi</a><br>Email: <a href=\"mailto:pksarmadi@gmail.com\" style=\"color:#4db8ff;\">pksarmadi@gmail.com</a>",
+  "about.links.secondary": "GitHub: <a href=\"https://github.com/HTIcodes\" style=\"color:#4db8ff;\">github.com/HTIcodes</a><br>LinkedIn: <a href=\"https://www.linkedin.com/in/mahyar-hemmati-0a81a1320/\" style=\"color:#4db8ff;\">mahyar-hemmati</a>",
+  "about.developers.third": "توسعه‌دهنده: چوپولوفکسی (Chupolovski)",
+  "about.disclaimer": "مسئولیت اطمینان از صحت مبالغ فاکتور بر عهده اپراتور است.",
+
+  "settings.about.title": "درباره نرم‌افزار",
+  "settings.about.button": "درباره PeMa Manager"
 }

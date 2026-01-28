@@ -5,6 +5,7 @@ venv/
 env/
 .env
 .venv/
+*.py[cod]
 
 # --- IDE Settings ---
 .vscode/
@@ -18,6 +19,9 @@ hypermarket.db
 *.db-wal
 *.db-shm
 *.db-journal
+*.env
+*.db
+*.sqlite3
 
 # --- Backups (DatabaseManager Updates) ---
 # User generated backups
@@ -46,3 +50,10 @@ logs/
 # --- OS Specific ---
 .DS_Store
 Thumbs.db
+auto_build.py
+
+# PyInstaller stuff
+build/
+dist/
+*.spec
+

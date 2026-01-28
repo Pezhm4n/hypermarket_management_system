@@ -202,7 +202,7 @@ class AuthController:
         Ensure there is at least one user account.
 
         If the user_account table is empty, create a default 'admin' user
-        with password 'admin123' and a minimal backing Employee record.
+        with password 'admin' and a minimal backing Employee record.
         """
         with self._get_session() as session:
             # If any user exists at all, don't create the default admin.
@@ -238,7 +238,7 @@ class AuthController:
                 session.add(employee)
                 session.flush()  # assign EmpID
 
-            raw_password = "admin123"
+            raw_password = "admin"
             hashed = bcrypt.hashpw(raw_password.encode("utf-8"), bcrypt.gensalt())
 
             user = UserAccount(

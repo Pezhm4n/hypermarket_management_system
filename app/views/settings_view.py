@@ -34,6 +34,7 @@ from app.core.database_manager import DatabaseManager
 from app.core.settings_manager import SettingsManager
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
+from app.views.components.about_dialog import AboutDialog
 
 logger = logging.getLogger(__name__)
 
@@ -327,6 +328,24 @@ class SettingsView(QWidget):
 
         layout.addWidget(self.grpDatabase)
 
+        # -----------------------------
+        # About / credits card
+        # -----------------------------
+        self.grpAbout = QGroupBox(container)
+        self.grpAbout.setObjectName("settingsAboutGroupBox")
+        about_outer_layout = QVBoxLayout(self.grpAbout)
+        about_outer_layout.setContentsMargins(16, 16, 16, 16)
+        about_outer_layout.setSpacing(12)
+
+        self.btnAbout = QPushButton(self.grpAbout)
+        self.btnAbout.setObjectName("btnAbout")
+        about_actions = QHBoxLayout()
+        about_actions.addStretch()
+        about_actions.addWidget(self.btnAbout)
+        about_outer_layout.addLayout(about_actions)
+
+        layout.addWidget(self.grpAbout)
+
         layout.addStretch()
 
         # Initial options (will be localized in _apply_translations)
@@ -338,6 +357,8 @@ class SettingsView(QWidget):
         self.btnSaveStore.clicked.connect(self._on_save_store_clicked)
         self.btnBackupDatabase.clicked.connect(self._on_backup_database_clicked)
         self.btnRestoreDatabase.clicked.connect(self._on_restore_database_clicked)
+        if hasattr(self, "btnAbout"):
+            self.btnAbout.clicked.connect(self._on_about_clicked)
         self.cmbTheme.currentIndexChanged.connect(self._on_theme_changed)
         if hasattr(self, "cmbLanguage"):
             self.cmbLanguage.currentIndexChanged.connect(
@@ -438,6 +459,14 @@ class SettingsView(QWidget):
         except Exception as e:
             logger.error("Error in _on_language_changed: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    def _on_about_clicked(self) -> None:
+        try:
+            dialog = AboutDialog(self)
+            dialog.exec()
+        except Exception as exc:
+            logger.error("Error opening About dialog: %s", exc, exc_info=True)
+            QMessageBox.critical(self, "Error", str(exc))
 
     def _apply_translations(self) -> None:
         """
@@ -590,11 +619,35 @@ class SettingsView(QWidget):
                     self._translator.get(
                         "settings.database.button.restore",
                         "Restore",
+                    ),
+                )
+
+            # About section
+            if hasattr(self, "grpAbout"):
+                self.grpAbout.setTitle(
+                    self._translator.get(
+                        "settings.about.title",
+                        "About the application",
+                    )
+                )
+            if hasattr(self, "btnAbout"):
+                self.btnAbout.setText(
+                    self._translator.get(
+                        "settings.about.button",
+                        "About PeMa Manager",
                     )
                 )
         except Exception as e:
             logger.error("Error in _apply_translations: %s", e, exc_info=True)
             QMessageBox.critical(self, "Error", str(e))
+
+    def _on_about_clicked(self) -> None:
+        try:
+            dialog = AboutDialog(self)
+            dialog.exec()
+        except Exception as exc:
+            logger.error("Error opening About dialog: %s", exc, exc_info=True)
+            QMessageBox.critical(self, "Error", str(exc))
 
     def _apply_permissions(self) -> None:
         try:

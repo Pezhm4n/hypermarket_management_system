@@ -1,6 +1,7 @@
 {
   "app.title": "Hypermarket Management System",
   "app.version": "1.0.0",
+  "app.footer.copyright": "© 2026 All rights reserved.",
 
   "dialog.error_title": "Error",
   "dialog.warning_title": "Warning",
@@ -18,6 +19,7 @@
   "login.error.invalid": "Invalid username or password.",
 
   "main.window_title": "Hypermarket Management System",
+  "main.window_title_full": "PeMa Manager - Hypermarket Management System v1.0",
   "main.header.welcome": "Welcome",
   "main.header.subtitle": "Hypermarket Management Dashboard",
 
@@ -27,6 +29,7 @@
   "sidebar.reports": "Reports",
   "sidebar.users": "Users",
   "sidebar.settings": "Settings",
+  "sidebar.help": "Help",
   "sidebar.logout": "Logout",
   "sidebar.language.en": "EN",
   "sidebar.language.fa": "FA",
@@ -495,5 +498,26 @@
   "users.dialog.error.mobile_invalid": "Mobile number must start with '09' and be 11 digits.",
   "users.dialog.error.password_min_length": "Password must be at least 4 characters long.",
   "users.dialog.error.password_mismatch": "Password and confirmation do not match.",
-  "scanner.dialog.file_filter": "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
+  "scanner.dialog.file_filter": "Images (*.png *.jpg *.jpeg *.bmp *.gif)",
+
+  "help.window_title": "Help",
+  "help.dialog.title": "PeMa Manager Help",
+  "help.missing_file": "Help file \"{filename}\" was not found. Please place it next to the executable.",
+  "help.toggle_images": "Show images",
+  "help.zoom_in": "A+",
+  "help.zoom_out": "A-",
+
+  "about.window_title": "About PeMa Manager",
+  "about.app_name": "PeMa Manager (Persian Market)",
+  "about.version": "Application version: v1.0.0",
+  "about.year": "Development year: 2026",
+  "about.developers.title": "Developers:",
+  "about.developers.primary": "<b>Pezhm4n</b> &amp; <b>HTIcodes</b>",
+  "about.links.primary": "GitHub: <a href=\"https://github.com/Pezhm4n\" style=\"color:#4db8ff;\">github.com/Pezhm4n</a><br>LinkedIn: <a href=\"https://www.linkedin.com/in/pezhman-sarmadi/\" style=\"color:#4db8ff;\">pezhman-sarmadi</a><br>Email: <a href=\"mailto:pksarmadi@gmail.com\" style=\"color:#4db8ff;\">pksarmadi@gmail.com</a>",
+  "about.links.secondary": "GitHub: <a href=\"https://github.com/HTIcodes\" style=\"color:#4db8ff;\">github.com/HTIcodes</a><br>LinkedIn: <a href=\"https://www.linkedin.com/in/mahyar-hemmati-0a81a1320/\" style=\"color:#4db8ff;\">mahyar-hemmati</a>",
+  "about.developers.third": "Developer: چوپولوفکسی (Chupolovski)",
+  "about.disclaimer": "The operator is responsible for verifying the correctness of invoice amounts.",
+
+  "settings.about.title": "About the application",
+  "settings.about.button": "About PeMa Manager"
 }

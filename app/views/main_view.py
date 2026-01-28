@@ -8,6 +8,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -29,12 +30,14 @@ from app.controllers.auth_controller import AuthController
 from app.controllers.sales_controller import SalesController
 from app.core.translation_manager import TranslationManager
 from app.models.models import UserAccount
+from app.utils import resource_path
 from app.views.inventory_view import InventoryView
 from app.views.reports_view import ReportsView
 from app.views.sales_view import SalesView
 from app.views.settings_view import SettingsView
 from app.views.users_view import UsersView
 from app.views.suppliers_view import SuppliersView
+from app.views.components.help_dialog import HelpDialog
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +149,16 @@ class MainView(QMainWindow):
         # Slightly wider minimum to give more breathing room to content layouts.
         self.setMinimumSize(1360, 800)
 
+        # Apply application identity (icon + title)
+        logo_path = resource_path("app/assets/logo.png")
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
+        base_title = self._translator.get(
+            "main.window_title_full",
+            self._translator.get("main.window_title", "PeMa Manager"),
+        )
+        self.setWindowTitle(base_title)
+
         self._build_ui()
         self._create_module_views()
         self._connect_signals()
@@ -205,6 +218,12 @@ class MainView(QMainWindow):
             ("settings", self.btnSettings),
         ]
 
+        # Contextual help button (opens help dialog, not a navigation page)
+        self.btnHelp = QPushButton(self.sidebar)
+        self.btnHelp.setObjectName("SidebarHelpButton")
+        # Style like other sidebar navigation buttons (transparent background, hover state)
+        self.btnHelp.setProperty("role", "nav")
+
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
 
@@ -213,6 +232,10 @@ class MainView(QMainWindow):
             btn.setProperty("role", "nav")
             sidebar_layout.addWidget(btn)
             self._nav_group.addButton(btn)
+
+        # Help button appears below the main navigation
+        sidebar_layout.addSpacing(8)
+        sidebar_layout.addWidget(self.btnHelp)
 
         # Sidebar now only contains navigation
         sidebar_layout.addStretch()
@@ -377,6 +400,14 @@ class MainView(QMainWindow):
         self._sales_chart_widget = MatplotlibWidget(dashboard_page)
         dashboard_layout.addWidget(self._sales_chart_widget, stretch=1)
 
+        # Copyright footer on dashboard
+        self._dashboard_footer = QLabel(dashboard_page)
+        self._dashboard_footer.setObjectName("DashboardFooterLabel")
+        self._dashboard_footer.setAlignment(
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+        )
+        dashboard_layout.addWidget(self._dashboard_footer)
+
         self._dashboard_page = dashboard_page
 
         # Sales / Inventory / Suppliers/ Reports / Settings modules
@@ -426,6 +457,9 @@ class MainView(QMainWindow):
         for key, btn in self._nav_buttons:
             btn.clicked.connect(lambda checked, k=key: self._switch_page(k))
 
+        # Help dialog
+        self.btnHelp.clicked.connect(self._on_help_clicked)
+
         # Logout
         self.btnLogout.clicked.connect(self._on_logout_clicked)
 
@@ -442,7 +476,10 @@ class MainView(QMainWindow):
         Apply localized texts to sidebar, header and static pages.
         """
         # Window title and app title
-        base_title = self._translator["main.window_title"]
+        base_title = self._translator.get(
+            "main.window_title_full",
+            self._translator.get("main.window_title", "PeMa Manager"),
+        )
         if self.current_user is not None:
             self.setWindowTitle(f"{base_title} - {self.current_user.Username}")
         else:
@@ -462,6 +499,9 @@ class MainView(QMainWindow):
         }
         for key, btn in self._nav_buttons:
             btn.setText(self._translator[text_keys[key]])
+
+        # Help button label
+        self.btnHelp.setText(self._translator.get("sidebar.help", "Help"))
 
         self.btnLogout.setText(self._translator["sidebar.logout"])
 
@@ -496,13 +536,34 @@ class MainView(QMainWindow):
                 )
             )
 
+        if hasattr(self, "_dashboard_footer"):
+            self._dashboard_footer.setText(
+                self._translator.get(
+                    "app.footer.copyright",
+                    "© 2026 All rights reserved.",
+                )
+            )
+
         # Update header title for current page
         current_key = self._current_page_key
         self._update_header_for_page(current_key)
 
     # ------------------------------------------------------------------ #
-    # Navigation
+    # Navigation / dialogs
     # ------------------------------------------------------------------ #
+    def _on_help_clicked(self) -> None:
+        """Open the contextual help dialog with language-aware content."""
+        try:
+            dialog = HelpDialog(translation_manager=self._translator, parent=self)
+            dialog.exec()
+        except Exception as exc:
+            logger.error("Error opening Help dialog: %s", exc, exc_info=True)
+            QMessageBox.critical(
+                self,
+                self._translator["dialog.error_title"],
+                str(exc),
+            )
+
     def _switch_page(self, page_key: str) -> None:
         """
         Switch the central stacked widget to the page identified by *page_key*.

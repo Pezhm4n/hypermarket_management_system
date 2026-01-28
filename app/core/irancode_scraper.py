@@ -27,6 +27,8 @@ except Exception:  # pragma: no cover - optional at runtime
     WebDriverException = Exception  # type: ignore[assignment]
     ChromeDriverManager = object  # type: ignore[assignment]
 
+from app.utils import resource_path
+
 logger = logging.getLogger(__name__)
 
 ProductInfo = Dict[str, str]
@@ -96,7 +98,13 @@ class IranCodeScraper:
             options.add_argument("--no-sandbox")
 
             try:
-                service = Service(ChromeDriverManager().install())
+                # Prefer a bundled chromedriver.exe if available; fall back to
+                # webdriver_manager's on-demand download otherwise.
+                driver_path = resource_path("chromedriver.exe")
+                if driver_path.exists():
+                    service = Service(str(driver_path))
+                else:
+                    service = Service(ChromeDriverManager().install())
             except Exception as exc:
                 logger.exception(
                     "IranCodeScraper: failed to obtain ChromeDriver: %s",
@@ -104,8 +112,9 @@ class IranCodeScraper:
                 )
                 self._report(
                     status_callback,
-                    "Unable to download ChromeDriver for IranCode lookup. "
-                    "This service may be blocked in your location.",
+                    "Unable to obtain ChromeDriver for IranCode lookup. "
+                    "Please ensure chromedriver.exe is present next to the application "
+                    "or check your internet connection.",
                 )
                 return None
 

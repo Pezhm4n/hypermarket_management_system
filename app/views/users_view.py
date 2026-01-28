@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 from PyQt6 import uic
 from PyQt6.QtCore import QDate, Qt, QRegularExpression
 from PyQt6.QtGui import QRegularExpressionValidator
+
+from app.utils import resource_path
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -52,7 +54,7 @@ class UsersView(QWidget):
         #   - QPushButton objectName="btnEditUser"
         #   - QPushButton objectName="btnDeleteUser"
         #   - QTableWidget objectName="tblUsers"
-        uic.loadUi("app/views/ui/users_view.ui", self)
+        uic.loadUi(resource_path("app/views/ui/users_view.ui"), self)
 
         self._setup_table()
         self._connect_signals()

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtGui import QFont
 from qt_material import apply_stylesheet
 from sqlalchemy import text, inspect, Integer, Numeric
@@ -22,6 +22,7 @@ from app.database import engine
 from app.models.models import Base  # importing this registers all model classes
 from app.views.login_view import LoginView
 from app.views.main_view import MainView
+from app.utils import resource_path
 
 
 logger = logging.getLogger(__name__)
@@ -173,15 +174,32 @@ class Application:
 
         # Internationalization
         self.translation_manager = TranslationManager(
-            translations_dir=CONFIG.translations_directory,
+            translations_dir=resource_path("app/i18n"),
             default_language=self._settings.get("language", CONFIG.default_language),
         )
         self._apply_layout_direction()
 
         # Database and default admin
-        init_database()
+        try:
+            init_database()
+        except SQLAlchemyError:
+            logger.exception("Database initialization failed.")
+            QMessageBox.critical(
+                None,
+                "خطای پایگاه داده",
+                "ارتباط با پایگاه داده برقرار نشد. لطفاً اینترنت یا کابل شبکه را بررسی کنید.",
+            )
+            sys.exit(1)
+        except Exception:
+            logger.exception("Unexpected error during database initialization.")
+            QMessageBox.critical(
+                None,
+                "خطای پایگاه داده",
+                "ارتباط با پایگاه داده برقرار نشد. لطفاً اینترنت یا کابل شبکه را بررسی کنید.",
+            )
+            sys.exit(1)
+
         self.auth_controller = AuthController()
-        self.auth_controller.create_default_admin()
 
         # Views
         self.main_view = MainView(
@@ -205,16 +223,13 @@ class Application:
         Set the application icon that appears in the taskbar and window title bar.
         """
         try:
-            # مسیر لوگو را تعیین کن
-            logo_path = Path("app/assets/logo.png")
-            
-            # بررسی وجود فایل
+            logo_path = resource_path("app/assets/logo.png")
             if logo_path.exists():
                 icon = QIcon(str(logo_path))
                 self.qt_app.setWindowIcon(icon)
-                logger.info(f"Application icon loaded successfully from {logo_path}")
+                logger.info("Application icon loaded successfully from %s", logo_path)
             else:
-                logger.warning(f"Logo file not found at {logo_path}")
+                logger.warning("Logo file not found at %s", logo_path)
         except Exception:
             logger.exception("Failed to load application icon")
 
@@ -223,7 +238,7 @@ class Application:
         Set icon for all main windows (login and main view).
         """
         try:
-            logo_path = Path("app/assets/logo.png")
+            logo_path = resource_path("app/assets/logo.png")
             if logo_path.exists():
                 icon = QIcon(str(logo_path))
                 self.main_view.setWindowIcon(icon)
@@ -339,7 +354,7 @@ class Application:
         self.login_view.login_success.connect(self._on_login_success)
         # Set icon for the new login view
         try:
-            logo_path = Path("app/assets/logo.png")
+            logo_path = resource_path("app/assets/logo.png")
             if logo_path.exists():
                 self.login_view.setWindowIcon(QIcon(str(logo_path)))
         except Exception:

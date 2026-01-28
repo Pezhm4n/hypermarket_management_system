@@ -11,6 +11,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 from PyQt6 import uic
+from app.utils import resource_path
 from PyQt6.QtCore import Qt, QRegularExpression, QDate, QUrl, QThread, pyqtSignal
 from PyQt6.QtGui import QRegularExpressionValidator, QColor, QBrush, QDesktopServices
 from PyQt6.QtWidgets import (
@@ -147,7 +148,7 @@ class InventoryView(QWidget):
         self._barcode_generator = BarcodeGenerator()
         self._read_only: bool = False
 
-        uic.loadUi("app/views/ui/inventory_view.ui", self)
+        uic.loadUi(resource_path("app/views/ui/inventory_view.ui"), self)
 
         self._setup_table()
         self._connect_signals()
